@@ -1,0 +1,324 @@
+#+title: lisp-dialect-bridge — Phase 0 overview & locked decisions
+#+author: zawatton
+#+date: 2026-04-27
+#+property: status PHASE-0-DESIGN
+
+* STATUS
+
+Phase 0 — DESIGN.  Phase 1 (Guix recipe importer) starts after this
+doc is locked.
+
+This doc lists the *locked* architectural decisions and the Phase 1
+contract.  Decisions in section "Locked decisions" should not be
+revised without a design-doc amendment commit; the IR shape, the
+hygiene strategy and the public surface are the foundation that all
+later phases build on.
+
+* Why this exists (short form)
+
+Three reasons compound:
+
+1. Guix has 30 000 Scheme recipes.  anvil-pkg cannot pitch a
+   migration path without a translator.
+2. Common Lisp has decades of mature libraries.  NeLisp gains a
+   credible standard library by importing the useful subset.
+3. Polyglot Lisp Machine.  The strategy doc in =anvil-pkg= argues
+   Elisp + NeLisp + bridge approaches a "world-class Lisp" by
+   importing what sibling dialects do better.  This repo is where
+   that import happens.
+
+Long form: =anvil-pkg/docs/design/03-strategy-vision.org=.
+
+* Goals (Phase 0)
+
+- Lock the public surface, the IR, and the macro-hygiene strategy.
+- Define a concrete Phase 1 deliverable that ships in 1 week and
+  validates the entire pipeline end-to-end (Guix recipe → IR →
+  =pkg-define= form that anvil-pkg can install).
+- Establish naming conventions parallel to anvil-pkg (=ldb-= public,
+  =ldb--= internal).
+
+* Non-goals
+
+- Translating /every/ Scheme / CL / Clojure program — see README.
+- A Common Lisp implementation in Elisp — cl-lib already exists.
+- A Nix expression evaluator in Elisp — the Nix daemon stays.
+- First-class continuations / =call/cc= — bridge will reject
+  programs that depend on them.
+
+* Locked decisions
+
+** L1. Translation strategy = AST/IR-mediated, source-to-source emission
+
+We translate /Scheme AST/ → /shared IR/ → /Elisp AST/, then
+=prin1= the Elisp AST as source text.  /Not/ runtime code-eval.
+
+Rationale:
+
+- Multiple input dialects × multiple output forms = N×M pairs if we
+  go directly source-to-source.  IR-mediated keeps it N+M.
+- Source-to-source emission keeps the output debuggable.  Phase 1
+  outputs human-readable Elisp that ends up in =pkg-define= forms.
+- Avoids the "we built a Scheme implementation" trap.  Bridge does
+  not /run/ Scheme code; it /reads/ Scheme source.
+
+** L2. IR shape
+
+A node is a plist with these stable keys:
+
+#+begin_src elisp
+(:tag    SYMBOL    ; canonical type — see "IR node tags"
+ :form   ...       ; node-specific structured payload
+ :origin SYMBOL    ; source dialect — 'scheme / 'cl / 'nix / 'elisp
+ :meta   PLIST)    ; carries source-language-specific notes
+#+end_src
+
+Stability contract: =:tag=, =:form=, =:origin=, =:meta= are the only
+top-level keys.  New per-tag information goes in =:form= or =:meta=.
+This shape is *frozen* after Phase 0; downstream phases extend by
+adding new =:tag= values, not by adding top-level keys.
+
+*** IR node tags (Phase 1 minimum set)
+
+| Tag        | =:form= shape                                 | Notes                              |
+|------------+-----------------------------------------------+------------------------------------|
+| =literal=  | =(:value V :type T)=                          | numbers, strings, chars, =#t/#f/nil=|
+| =ref=      | =(:name SYM)=                                 | variable reference                 |
+| =quote=    | =(:datum X)=                                  | =(quote ...)= or ='X=              |
+| =lambda=   | =(:params (P ...) :body (NODE ...))=          | =(lambda PARAMS BODY)=             |
+| =call=     | =(:fn NODE :args (NODE ...))=                 | function application              |
+| =if=       | =(:cond NODE :then NODE :else NODE)=          | =(if C T E)=                       |
+| =let=      | =(:bindings ((SYM NODE) ...) :body (NODE ...))=| =(let BINDINGS BODY)=             |
+| =define=   | =(:name SYM :value NODE)=                     | =(define NAME EXPR)=               |
+| =record=   | =(:type SYM :fields ((SYM NODE) ...))=        | Guix =package= / =origin=          |
+| =module=   | =(:items (NODE ...))=                         | top-level form sequence            |
+
+The =record= tag is the load-bearing one for Phase 1 — Guix
+=package= and =origin= forms are records.
+
+*** Phase 2+ tags (NOT Phase 1)
+
+=set!= / =letrec= / =cond= / =case= / =define-syntax= / =syntax-rules= /
+=quasiquote= / =receive= / =delay= / =force= / =call/cc=
+(rejected) / etc.
+
+** L3. Macro hygiene strategy = pre-expand source-side (Phase 1-2)
+
+Macros are the single hardest correctness issue.  Phase 1 sidesteps
+it by /not translating macros/ — we accept only forms that are
+already expanded, and Phase 1 inputs (Guix =package= records) do not
+contain user-defined macros at the top level.
+
+Phase 2 generalises by /pre-expanding via an external Scheme/ (Guile
+or Chicken in batch mode).  We feed the source through =read= +
+=expand=, capture the expanded forms, and translate the post-expansion
+result.  This puts hygiene on the Scheme implementation and keeps
+bridge's translator a pure tree-mapper.
+
+Phase 4+ may implement hygienic =syntax-rules= directly in Elisp on
+top of NeLisp's IR.  Decision deferred until we have data on what
+real-world macros need to translate.
+
+** L4. Public Elisp surface = =ldb-= prefix
+
+Three layers parallel to anvil-pkg's policy:
+
+- *project / brand*: =lisp-dialect-bridge=
+- *public Elisp API*: =ldb-= short prefix (e.g. =ldb-guix-import-file=)
+- *internal*: =ldb--= private double-dash
+
+Sub-form keywords inside future macros (e.g. =ldb-define-translator=)
+are unprefixed Guix-style.
+
+** L5. Output target for Phase 1 = =pkg-define= form
+
+Phase 1's importer emits =pkg-define= forms compatible with anvil-pkg
+Phase 3.  The translator does /not/ install — it returns the form as
+data; the user pipes it to =pp= / =write-file= / =eval= / whatever.
+
+#+begin_src elisp
+(ldb-guix-import-file "/path/to/recipe.scm" 'ripgrep)
+;; => (pkg-define ripgrep
+;;      (version "13.0.0")
+;;      (source (url-fetch "..." :sha256 "..."))
+;;      (build-system (rust :cargo-sha256 "...")))
+#+end_src
+
+This decouples bridge from anvil-pkg at runtime — bridge is a /pure
+translator/, the user (or anvil-pkg) decides what to do with the
+output.
+
+** L6. License + naming
+
+GPL-3.0-or-later, matching anvil-pkg + NeLisp.  Working name
+=lisp-dialect-bridge=; rename to =anvil-bridge= optional in Phase 2.
+
+* Phase 1 contract (Guix recipe importer)
+
+** Scope
+
+Translate one specific Scheme recipe form into one =pkg-define=
+form.  The form we target:
+
+#+begin_src scheme
+(define-public NAME
+  (package
+    (name STRING)
+    (version STRING)
+    (source (origin
+              (method url-fetch)            ; or (method git-fetch)
+              (uri STRING)
+              (sha256 (base32 STRING))))
+    (build-system stdenv-build-system)      ; or rust- / python- / go-
+    (inputs (list pkg-config openssl))      ; or `(...) form
+    (synopsis STRING)
+    (description STRING)
+    (home-page STRING)
+    (license LICENSE-EXPR)))
+#+end_src
+
+** Public API
+
+#+begin_src elisp
+(ldb-guix-import-file FILE NAME-SYM)        ; → pkg-define form (data)
+(ldb-guix-import-string SOURCE NAME-SYM)    ; same, from string
+(ldb-guix-import-form FORM)                 ; one Scheme form → one pkg-define
+#+end_src
+
+** Mappings (Scheme → IR → Elisp)
+
+| Scheme form                              | IR shape                                | Elisp output                                          |
+|------------------------------------------+-----------------------------------------+-------------------------------------------------------|
+| =(define-public NAME ...)=               | =(:tag define :name NAME :value ...)=  | =(pkg-define NAME ...)=                               |
+| =(package (name S) (version V) ...)=     | =(:tag record :type 'package :fields ...)=| top-level =pkg-define= sub-forms                  |
+| =(origin (method url-fetch) (uri U) (sha256 (base32 H)))= | =(:tag record :type 'origin ...)= | =(source (url-fetch U :sha256 H))=         |
+| =(method git-fetch)=                     | dispatch via inner record               | =(git-fetch :url ... :rev ... :sha256 ...)=          |
+| =stdenv-build-system=                    | =(:tag ref :name 'stdenv-build-system)= | =(build-system stdenv)=                               |
+| =cargo-build-system=                     | similar                                 | =(build-system (rust :cargo-sha256 ...))=             |
+| =python-build-system=                    | similar                                 | =(build-system python)=                               |
+| =go-build-system=                        | similar                                 | =(build-system go)=                                   |
+| =(inputs (list ...))= / =(inputs ‘(...))=| =(:tag record-field :name inputs ...)=  | =(inputs (list ...))=                                |
+| =(synopsis "...")=                       | record field                            | =(description "...")= (Guix synopsis ≅ short desc)    |
+| =(description "...")=                    | record field                            | dropped or merged (Phase 2 decides)                   |
+| =(home-page "...")=                      | record field                            | =(homepage "...")=                                    |
+| =(license license:mit)=                  | =(:tag ref :name 'license:mit)=        | =(license mit)=                                       |
+
+Some Guix-specific transforms:
+
+- =(base32 H)= → strip wrapper, the rendered Nix uses the same hash
+  format as nixpkgs, so we keep the hash string verbatim.  *Note*:
+  base32 vs SRI is a real concern in Phase 2; for Phase 1 we
+  preserve string and let Nix complain on install if format
+  mismatches.
+- =cargo-build-system= → =(rust :cargo-sha256 ?)=.  Phase 1 leaves
+  =:cargo-sha256= unfilled and the importer signals
+  =ldb-missing-cargo-sha256-error= asking the user to provide it.
+- =synopsis= and =description= roles differ between Guix and our
+  schema; Phase 1 maps =synopsis= → =description= and drops Guix's
+  =description=.  Phase 2 may join.
+
+** Reject list (Phase 1 hard errors)
+
+The importer signals =ldb-unsupported-guix-form-error= on:
+
+- Recipes using =define-syntax= / hygienic macros at top level
+- =package-inherit= or =inherit-from= overrides (Phase 3)
+- =arguments= field with =substitute*= / phase patches (Phase 3)
+- Cross-compilation declarations (`#:target`)
+- Any =package= field outside the L5 mapping table
+
+These are *intentional limits*: we ship a useful narrow tool first,
+then expand.
+
+** ERT (Phase 1 target = 8-10)
+
+| #  | Test                                       | Covers                                |
+|----+--------------------------------------------+---------------------------------------|
+| 1  | =scheme-read-package-form=                 | parser produces expected S-expression |
+| 2  | =parse-package-into-ir=                    | record IR shape                       |
+| 3  | =parse-origin-into-ir=                     | nested record                         |
+| 4  | =emit-pkg-define-stdenv-golden=            | full pipeline golden                  |
+| 5  | =emit-pkg-define-cargo-build-system=       | rust mapping                          |
+| 6  | =emit-pkg-define-python-build-system=      | python mapping                        |
+| 7  | =reject-define-syntax=                     | Phase 1 limit signals                 |
+| 8  | =reject-package-inherit=                   | Phase 1 limit signals                 |
+| 9  | =round-trip-five-real-recipes=             | integration over real recipes         |
+
+The 9th is the canary — it picks 5 representative Guix recipes
+(=ripgrep=, =fd=, =bat=, =python-requests=, =go-vegeta=) and asserts
+the importer either produces a syntactically valid =pkg-define= or
+signals one of the documented errors.
+
+* Open questions
+
+** OQ1. Sha256 format mismatch (base32 vs SRI)
+
+Guix uses =(base32 "0xxxx...")= for hashes; nixpkgs and anvil-pkg
+expect SRI =sha256-XXXX/YYYY=.  Phase 1 currently preserves the
+string verbatim — install will fail with hash mismatch on real
+recipes.
+
+Options:
+
+1. Translate base32 → SRI at import time (need a base32 decoder +
+   re-encoder).
+2. Emit a TODO marker and require the user to refetch + insert.
+3. Defer to Phase 2; Phase 1 marks as known limitation and ships.
+
+Tentative: 3.  The recipe importer is /useful for structure
+extraction/ even if hashes need re-fetching.  Phase 2 adds option 1.
+
+** OQ2. Build-system arg discovery
+
+=cargo-build-system= recipes carry =#:cargo-inputs= and
+=#:cargo-development-inputs= which we have nowhere to put.  Phase 1
+drops them; Phase 3 (when anvil-pkg accepts richer rust args) lifts
+them in.
+
+** OQ3. Where the Scheme /reader/ comes from
+
+Three options:
+
+1. Hand-rolled Elisp reader covering R5RS subset + Guix-specific
+   tokens (=#:keyword=, =#~..=, =#$..=).  Cleanest but ~500 LOC.
+2. Use Emacs's built-in =read= and accept that Scheme tokens like
+   =#t= /=#f= require pre-processing.  Lighter but fragile.
+3. Shell out to Guile / Chicken for parsing only.
+
+Tentative: 1 with a narrow subset.  Phase 2 may swap for 3 if hygiene
+becomes blocking.
+
+** OQ4. NeLisp dependency
+
+Phase 1 runs on Emacs 29+ alone.  Should the loader =require=
+NeLisp?
+
+Tentative: no.  Bridge is a NeLisp /companion/ — it benefits from
+NeLisp's TCO / hygiene roadmap when running on NeLisp, but does not
+require NeLisp at load time.  Document compatibility, do not gate.
+
+** OQ5. anvil-bridge rename timing
+
+Strategy doc allows renaming to =anvil-bridge= for ecosystem
+cohesion.  Open question: when?
+
+Tentative: after Phase 1 ships and we have user feedback on the
+import flow.  Phase 1 commits and tags can carry both names if
+needed via =git tag=.
+
+* References
+
+- =anvil-pkg/docs/design/03-strategy-vision.org= — parent strategy
+  doc (3-project structure, Lisp comparison, NeLisp synergy, OS
+  angle).
+- =anvil-pkg/docs/design/02-dsl.org= — Phase 1 output target schema.
+- Guix package definitions (canonical examples):
+  https://git.savannah.gnu.org/cgit/guix.git/tree/gnu/packages
+- R7RS Scheme reference (Phase 2 input dialect):
+  https://small.r7rs.org/
+- Common Lisp ANSI standard (Phase 4 input):
+  https://www.lispworks.com/documentation/HyperSpec/Front/index.htm
+- Racket macro system (Phase 4+ hygiene reference):
+  https://docs.racket-lang.org/guide/macros.html
+- SBCL implementation strategy (genesis):
+  Rhodes 2008, "SBCL: a Sanely-Bootstrappable Common Lisp"

@@ -1,0 +1,9 @@
+*.elc
+*~
+\#*\#
+.\#*
+.dir-locals.el
+*.log
+/build/
+/dist/
+/scratch/

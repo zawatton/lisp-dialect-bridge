@@ -1,0 +1,144 @@
+#+title: lisp-dialect-bridge — Lisp-family ↔ Emacs Lisp interop, NeLisp extension
+#+author: zawatton
+#+date: 2026-04-27
+
+* What is lisp-dialect-bridge?
+
+A *NeLisp extension package* that translates between sibling Lisp
+dialects and Emacs Lisp through a shared IR.  Phase 1 ships a
+unidirectional Guix Scheme → Elisp recipe importer; later phases
+generalise to R7RS Scheme, Common Lisp subset, Nix expression, and
+back.
+
+#+begin_quote
+The same trick SBCL pulled (CL implemented in CL): translate the
+parts of sibling Lisps that matter into the substrate where Emacs
+itself lives.  Then anvil-pkg can ingest Guix recipes, NeLisp can
+host Common Lisp libraries, and AI agents speak one Lisp through the
+others.
+#+end_quote
+
+* Status
+
+*Phase 0* — design only (this repo's first commit).  Phase 1 (Guix
+recipe importer) is the next milestone; see =docs/design/01-overview.org=.
+
+No code runs yet.
+
+* Why this exists
+
+Three independent reasons compound:
+
+1. *Guix migration moat.* anvil-pkg's biggest user-acquisition risk
+   is "Guix has 30 000 Scheme recipes I do not want to rewrite".  A
+   working Scheme-recipe → anvil-pkg-define translator removes that
+   risk.
+2. *Ecosystem import.*  Common Lisp has decades of mature libraries
+   (asdf, alexandria, clack, hunchentoot, ...).  Translating a
+   useful subset to Elisp gives NeLisp a credible standard library
+   without re-authoring everything.
+3. *Polyglot Lisp Machine path.*  The strategy-vision doc in
+   anvil-pkg argues that Elisp + NeLisp + bridge approaches a "world
+   class Lisp" by importing what the other dialects do better
+   (Racket's hygienic macros, CL's CLOS, Clojure's persistent
+   collections).  This repo is where that import happens.
+
+* Goals
+
+- Translate constrained subsets of /Scheme/, /Common Lisp/, and the
+  /Nix expression language/ into Elisp source (uni-directional MVP).
+- Extend to bidirectional Elisp ↔ Scheme once the IR is stable.
+- Stay a clean NeLisp extension — no fork of NeLisp internals, no
+  monkey-patching.
+- Keep the IR small enough that one human can reason about every
+  node type at once.
+
+* Non-goals
+
+- Translating /every/ Scheme / CL / Clojure program.  We translate
+  /useful subsets/ and reject pathological forms loudly.
+- A Common Lisp implementation in Elisp.  cl-lib already exists; we
+  are about /translation/, not implementation.
+- A Nix evaluator in Elisp.  We translate Nix source, then hand to
+  anvil-pkg-render-nix or the Nix daemon.
+- Continuations / =call/cc= for arbitrary control flow.  Bridge will
+  reject programs that depend on first-class continuations (a small
+  minority of real-world Scheme).
+
+* Approach overview
+
+#+begin_src text
+  ┌─────────────────────────────────────────────────────────────┐
+  │  Source dialects                                             │
+  │   Guix Scheme recipes    R7RS Scheme    Common Lisp    Nix   │
+  └────┬─────────────────────┬───────────┬──────────────┬───────┘
+       │                     │           │              │
+       ▼ ldb-scheme-read     ▼           ▼              ▼
+  ┌─────────────────────────────────────────────────────────────┐
+  │  Common IR                                                   │
+  │   (:tag SYM :form ... :origin DIALECT :meta ...)             │
+  └────┬─────────────────────────────────────────────────────────┘
+       ▼ ldb-emit-elisp
+  ┌─────────────────────────────────────────────────────────────┐
+  │  Output: Elisp source                                        │
+  │   ; can be fed to byte-compile, anvil-pkg-define, etc.       │
+  └─────────────────────────────────────────────────────────────┘
+#+end_src
+
+The IR is the load-bearing piece — see =docs/design/01-overview.org=
+section "IR design".
+
+* Phase plan
+
+| Phase | Scope                                                              | Status        |
+|-------+--------------------------------------------------------------------+---------------|
+| 0     | Design — this doc, IR sketch, macro hygiene strategy               | *current*     |
+| 1     | Guix recipe importer (Scheme =package= form → =pkg-define=)       | next          |
+| 2     | R7RS Scheme subset → Elisp (general translator)                     | planned       |
+| 3     | Bidirectional Elisp ↔ Scheme                                        | planned       |
+| 4     | Common Lisp subset → Elisp                                          | research      |
+| 5     | Nix expression → Elisp IR (so anvil-pkg can ingest nixpkgs natively)| research      |
+| 6+    | Clojure subset (JVM-bound, very long term)                          | not promised  |
+
+* Repository layout (planned)
+
+#+begin_src text
+lisp-dialect-bridge/
+├── README.org                      # this file
+├── LICENSE                         # GPL-3.0-or-later
+├── CLAUDE.md                       # Claude Code working rules
+├── Makefile                        # test / compile / clean (Phase 1)
+├── docs/
+│   └── design/
+│       └── 01-overview.org         # Phase 0 design contract
+├── lisp-dialect-bridge.el          # top-level loader (Phase 1)
+├── ldb-ir.el                       # IR definitions + helpers (Phase 1)
+├── ldb-scheme.el                   # Scheme reader + IR mapper (Phase 1)
+├── ldb-emit-elisp.el               # IR → Elisp source (Phase 1)
+├── ldb-guix-importer.el            # Phase 1 entry — Guix recipe → pkg-define
+└── test/
+    └── ldb-*-test.el               # ERT
+#+end_src
+
+* Naming
+
+=lisp-dialect-bridge= is the working name.  Per the anvil ecosystem
+strategy doc (=anvil-pkg/docs/design/03-strategy-vision.org=) the
+project may later rename to =anvil-bridge= for cohesion.  We revisit
+that decision when Phase 1 ships and the project's identity is clear.
+
+* Install (Phase 1+)
+
+Not yet installable.  When Phase 1 ships, expected setup:
+
+#+begin_src elisp
+(add-to-list 'load-path "~/lisp-dialect-bridge")
+(require 'lisp-dialect-bridge)
+
+;; Translate one Guix recipe file to anvil-pkg's pkg-define form
+(ldb-guix-import-file "/path/to/guix/gnu/packages/rust.scm" 'ripgrep)
+#+end_src
+
+* License
+
+GPL-3.0-or-later.  Same as anvil-pkg and NeLisp.
