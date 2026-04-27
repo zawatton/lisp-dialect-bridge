@@ -20,10 +20,18 @@ others.
 
 * Status
 
-*Phase 0* — design only (this repo's first commit).  Phase 1 (Guix
-recipe importer) is the next milestone; see =docs/design/01-overview.org=.
+*Phase 1 SHIPPED* (2026-04-27).  Guix recipe importer is live; ERT
+9/9 PASS (mocked, no Scheme implementation needed).  Public entry:
 
-No code runs yet.
+#+begin_src elisp
+(ldb-guix-import-string SOURCE NAME-SYM)  ; from string
+(ldb-guix-import-file PATH NAME-SYM)      ; from file
+(ldb-guix-import-form FORM)               ; from already-read S-exp
+#+end_src
+
+Output is a =pkg-define= S-expression (data — caller pp / write /
+eval).  Phase 2 (general R7RS subset translator) is the next
+milestone; see =docs/design/01-overview.org=.
 
 * Why this exists
 
@@ -92,9 +100,9 @@ section "IR design".
 
 | Phase | Scope                                                              | Status        |
 |-------+--------------------------------------------------------------------+---------------|
-| 0     | Design — this doc, IR sketch, macro hygiene strategy               | *current*     |
-| 1     | Guix recipe importer (Scheme =package= form → =pkg-define=)       | next          |
-| 2     | R7RS Scheme subset → Elisp (general translator)                     | planned       |
+| 0     | Design — IR sketch, macro hygiene strategy                          | SHIPPED       |
+| 1     | Guix recipe importer (Scheme =package= form → =pkg-define=)       | *SHIPPED*     |
+| 2     | R7RS Scheme subset → Elisp (general translator)                     | next          |
 | 3     | Bidirectional Elisp ↔ Scheme                                        | planned       |
 | 4     | Common Lisp subset → Elisp                                          | research      |
 | 5     | Nix expression → Elisp IR (so anvil-pkg can ingest nixpkgs natively)| research      |

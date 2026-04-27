@@ -1,18 +1,22 @@
 #+title: lisp-dialect-bridge — Phase 0 overview & locked decisions
 #+author: zawatton
 #+date: 2026-04-27
-#+property: status PHASE-0-DESIGN
+#+property: status PHASE-1-SHIPPED
 
 * STATUS
 
-Phase 0 — DESIGN.  Phase 1 (Guix recipe importer) starts after this
-doc is locked.
+Phase 1 SHIPPED — 2026-04-27.  Guix recipe importer is live: 4
+modules (=ldb-ir.el= / =ldb-scheme.el= / =ldb-emit-elisp.el= /
+=ldb-guix-importer.el=) plus the top-level loader, ERT 9/9 PASS,
+byte-compile warnings-as-errors clean.
 
-This doc lists the *locked* architectural decisions and the Phase 1
-contract.  Decisions in section "Locked decisions" should not be
-revised without a design-doc amendment commit; the IR shape, the
-hygiene strategy and the public surface are the foundation that all
-later phases build on.
+Public entry: =ldb-guix-import-string= / =ldb-guix-import-file= /
+=ldb-guix-import-form=.  Output is a `pkg-define' S-expression
+(data, not eval).
+
+Phase 0 — DESIGN (the remainder of this doc).  Locked decisions
+L1-L6 below are still load-bearing — revise here before changing
+code.
 
 * Why this exists (short form)
 
