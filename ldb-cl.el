@@ -113,7 +113,11 @@ Everything else (Lisp-2 symbols, keywords, t/nil, #') reads natively."
     (char . aref) (schar . aref) (svref . aref)
     (char-code . identity) (code-char . identity)
     (case . cl-case) (typecase . cl-typecase) (ecase . cl-ecase)
-    (etypecase . cl-etypecase) (ccase . cl-ccase))
+    (etypecase . cl-etypecase) (ccase . cl-ccase)
+    (values . cl-values) (multiple-value-list . cl-multiple-value-list)
+    (multiple-value-call . cl-multiple-value-call) (nth-value . cl-nth-value)
+    (floor . cl-floor) (ceiling . cl-ceiling) (truncate . cl-truncate)
+    (round . cl-round) (rem . cl-rem))
   "Common Lisp symbol -> Elisp/cl-lib symbol for function-position heads.")
 
 (defun ldb-cl--remap-head (sym)
@@ -124,8 +128,7 @@ Everything else (Lisp-2 symbols, keywords, t/nil, #') reads natively."
   '(defclass defmethod defgeneric
     define-condition handler-case handler-bind restart-case restart-bind
     defmacro macrolet symbol-macrolet define-symbol-macro define-compiler-macro
-    loop do do* values multiple-value-bind multiple-value-call
-    multiple-value-list multiple-value-setq nth-value
+    do do* multiple-value-setq
     in-package defpackage
     formatter print princ prin1 write write-line write-string write-char
     read read-line read-char read-from-string
@@ -219,6 +222,8 @@ Returns nil for a `declare' form (callers drop it from bodies)."
      ((eq head 'defstruct) (ldb-cl--defstruct-to-ir form))
      ((memq head '(case typecase ecase etypecase ccase)) (ldb-cl--case-to-ir form))
      ((eq head 'format) (ldb-cl--format-to-ir form))
+     ((eq head 'loop) (ldb-cl--loop-to-ir form))
+     ((eq head 'multiple-value-bind) (ldb-cl--mvb-to-ir form))
      ((memq head '(dolist dotimes)) (ldb-cl--bind-to-ir form))
      ((memq head '(labels flet)) (ldb-cl--locals-to-ir form))
      (t
@@ -359,6 +364,26 @@ Signals on parameterized or unsupported directives (reject loudly)."
                              :control (ldb-cl--format-control ctrl)
                              :args (ldb-cl--map-forms (cdddr form)))
                  :origin 'cl)))
+
+(defun ldb-cl--loop-walk (clause)
+  "Translate one CL loop CLAUSE element.
+List-valued elements are embedded expressions (translated); atoms are
+loop keywords or binding vars and are kept verbatim."
+  (if (consp clause) (ldb-cl-form-to-ir clause) clause))
+
+(defun ldb-cl--loop-to-ir (form)
+  "Translate a CL `loop' FORM to `cl-loop' (which is CL LOOP, ported)."
+  (ldb-ir-make 'loop
+               :form (list :clauses (mapcar #'ldb-cl--loop-walk (cdr form)))
+               :origin 'cl))
+
+(defun ldb-cl--mvb-to-ir (form)
+  "Translate (multiple-value-bind (VARS) VALUE BODY...) to cl-multiple-value-bind."
+  (ldb-ir-make 'mvb
+               :form (list :vars (nth 1 form)
+                           :value (ldb-cl-form-to-ir (nth 2 form))
+                           :body (ldb-cl--map-forms (cdddr form)))
+               :origin 'cl))
 
 (defun ldb-cl--function-to-ir (form)
   "Translate a `function' special form (sharp-quote) in FORM.

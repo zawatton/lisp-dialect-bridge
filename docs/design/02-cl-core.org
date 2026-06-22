@@ -57,6 +57,16 @@ macros.  Macro translation is intentionally deferred (the hard hygiene
 problem; pre-expansion via an external CL is the correct path when one
 is available).
 
+A 4c increment adds =loop= → =cl-loop= (the loop keyword DSL passes
+through; only the list-valued clause expressions are translated, e.g.
+=(evenp x)= → =(cl-evenp x)=) and =multiple-value-bind= →
+=cl-multiple-value-bind= (with =values=/=floor=/=truncate=/... → =cl-*=).
+Validated on a loop dot-product, a filtered collection, a hash-table
+histogram (=loop ... being the hash-keys=, =incf (gethash ...)=) and a
+=floor= divmod.  Known limit: a loop destructuring var named after a
+remapped CL function (e.g. =for (first rest) ...=) would be mis-mapped —
+rare, documented.  ERT 38/38, byte-compile clean.
+
 Builds on the Phase 0 IR contract (=01-overview.org= L1/L2).  Re-uses
 the documented general-code IR tags; this doc only *adds* tags, never
 new top-level IR keys (per CLAUDE.md invariant 2).
@@ -105,6 +115,8 @@ means Scheme still benefits later.
 | sharp-quote =#'fn=                         | =#'fn= (designator remapped)        | sharp-quoted oddp→cl-oddp (4b) |
 | =(format nil/t CTRL ...)=                  | =(format …)= / =(princ (format …))= | ~a~s~d~f~x~%~~ ; params rejected (4b)|
 | backquote / unquote / splice               | same (Elisp shares the reader)      | unquoted exprs translated; nested rejected (4b)|
+| =(loop ...)=                               | =(cl-loop ...)=                     | keyword DSL kept; list-valued clause exprs translated (4c)|
+| =(multiple-value-bind (vs) v body)=        | =(cl-multiple-value-bind ...)=      | + values/floor/truncate/...→cl-* (4c)|
 
 Lambda-list handling: a CL λ-list needs =cl-defun=/=cl-function= iff it
 contains =&key=, =&aux=, or an =&optional=/=&rest= var with a default
@@ -117,8 +129,7 @@ Declarations =(declare …)= and =(the TYPE expr)= are *stripped*
 
 CLOS (=defclass/defmethod/defgeneric=), conditions
 (=define-condition/handler-case/restart-case=), macros
-(=defmacro/macrolet/define-symbol-macro=), =loop=, multiple values
-(=values/multiple-value-bind=), packages
+(=defmacro/macrolet/define-symbol-macro=), packages
 (=in-package/defpackage=), I/O with divergent semantics
 (=print/princ/write/read=), =tagbody/go=, =eval-when=,
 nested backquote, =call/cc=-equivalents, binding/clause forms

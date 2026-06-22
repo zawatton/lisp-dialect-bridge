@@ -263,6 +263,18 @@ recipe — the user must add it after import.")
     ('backquote
      (list ldb-ir-backquote-symbol
            (ldb-emit-elisp--bq-template (plist-get (ldb-ir-form node) :template))))
+    ('loop
+     (cons 'cl-loop
+           (mapcar (lambda (el)
+                     (if (and (consp el) (eq (car el) :tag))
+                         (ldb-emit-elisp-node el)
+                       el))
+                   (plist-get (ldb-ir-form node) :clauses))))
+    ('mvb
+     (let ((f (ldb-ir-form node)))
+       (append (list 'cl-multiple-value-bind (plist-get f :vars)
+                     (ldb-emit-elisp-node (plist-get f :value)))
+               (mapcar #'ldb-emit-elisp-node (plist-get f :body)))))
     ('format
      (let* ((f (ldb-ir-form node))
             (call (cons 'format (cons (plist-get f :control)

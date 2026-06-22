@@ -127,10 +127,21 @@
   (should-error (ldb-cl-translate-string "(defmacro m (x) `(+ ,x 1))")
                 :type 'ldb-cl-unsupported-form-error))
 
-(ert-deftest ldb-cl-test-reject-loop ()
-  "Extended LOOP signals (deferred to a later increment)."
-  (should-error (ldb-cl-translate-string "(loop for i from 1 to 3 collect i)")
-                :type 'ldb-cl-unsupported-form-error))
+(ert-deftest ldb-cl-test-loop ()
+  "loop -> cl-loop; embedded expressions translated/remapped, keywords kept."
+  (should (equal '(cl-loop for i from 1 to 3 collect (* i i))
+                 (ldb-cl-translate-form
+                  (ldb-cl-read-from-string "(loop for i from 1 to 3 collect (* i i))"))))
+  (should (equal '(1 9 25)
+                 (ldb-cl-test--eval "(loop for i in (list 1 3 5) collect (* i i))")))
+  (should (equal '(2 4)
+                 (ldb-cl-test--eval
+                  "(loop for i in (list 1 2 3 4) when (evenp i) collect i)"))))
+
+(ert-deftest ldb-cl-test-multiple-values ()
+  "multiple-value-bind + a multiple-valued function (floor -> cl-floor)."
+  (should (= 5 (ldb-cl-test--eval
+                "(multiple-value-bind (q r) (floor 17 4) (+ q r))"))))
 
 (ert-deftest ldb-cl-test-eval-case ()
   "CL case maps to cl-case with clause keys preserved."

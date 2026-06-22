@@ -105,7 +105,10 @@ section "IR design".
 | 2     | R7RS Scheme subset → Elisp (general translator)                     | next          |
 | 3     | Bidirectional Elisp ↔ Scheme                                        | planned       |
 | 4a    | Common Lisp /core syntax/ → Elisp (defun/let/cond/labels/seq-fns)    | *SHIPPED*     |
-| 4b    | Common Lisp — defstruct / format / macros (gated on hygiene)         | research      |
+| 4b    | CL case / defstruct / sharp-quote / format / backquote               | *SHIPPED*     |
+| 4c    | CL loop → cl-loop / multiple-value-bind                              | *SHIPPED*     |
+| 4d    | CL CLOS (defclass/defmethod → eieio) / conditions                   | research      |
+| 4e    | CL macros (gated on hygiene; external-CL pre-expand)                | research      |
 | 5     | Nix expression → Elisp IR (so anvil-pkg can ingest nixpkgs natively)| research      |
 | 6+    | Clojure subset (JVM-bound, very long term)                          | not promised  |
 
