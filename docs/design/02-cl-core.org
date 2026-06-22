@@ -45,6 +45,18 @@ on a backquote-based symbolic differentiator (builds its result
 expressions) and splice-based form builders.  ERT 37/37, byte-compile
 warnings-as-errors clean.
 
+Real-program validation (no fixes needed): the full Norvig PAIP pattern
+matcher (=variable-p= / =match-variable= / =pat-match=, with an
+=&optional= quoted-list default) and the PAIP unifier (=unify= /
+=unify-var=) translate and run correctly — variable binding, mismatch,
+consistency and full unification all behave; hash-table memoisation via
+=(setf (gethash k h) v)= also works.  The core translator covers
+self-contained classic CL-AI (matching, unification, symbolic
+differentiation, GP kernels, set ops, memoisation) without needing
+macros.  Macro translation is intentionally deferred (the hard hygiene
+problem; pre-expansion via an external CL is the correct path when one
+is available).
+
 Builds on the Phase 0 IR contract (=01-overview.org= L1/L2).  Re-uses
 the documented general-code IR tags; this doc only *adds* tags, never
 new top-level IR keys (per CLAUDE.md invariant 2).
