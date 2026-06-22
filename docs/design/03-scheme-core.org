@@ -41,8 +41,21 @@ support — the GOFAI classic, the Scheme twin of the CL PAIP validation.
 =(deriv '(* (* x y) (+ x 3)) 'x)= and friends build and simplify symbolic
 expressions byte-for-byte like Guile.  This confirms the core ingests
 self-contained real Scheme (recursion, higher-order, symbolic list code)
-today; the frontier stays at continuations, hygienic macros, multiple
-values and quasiquote.
+today; the frontier stays at continuations, hygienic macros and multiple
+values.
+
+Quasiquote increment (2026-06-22).  Scheme =`(a ,b ,@c)= →
+=`(a ,b ,@c)= (Elisp backquote).  The reader (Emacs =read=) already
+produces the same =`/,/,@= representation as CL, and the =backquote= IR
+tag + emitter are dialect-neutral, so only a Scheme-specific
+=ldb-scheme--bq-walk= was needed — it walks the template keeping literal
+data verbatim and routing unquoted =,E= / =,@E= through the /Scheme/
+(env/funcall-aware) translator, so unquoted exprs see local bindings and
+Lisp-1 calls correctly.  Nested quasiquote and a stray =,x= outside a
+quasiquote are rejected loudly.  Validated differentially against Guile
+(=make schemediff= 28/28): =`(a ,b c)=, splice =`(start ,@xs end)=,
+computed =`(square ,(* x x))= and the real deriv-style constructor
+=(define (make-sum a b) `(+ ,a ,b))= → =(+ x 3)= all agree.
 
 * Why Scheme is the harder target (vs CL near-identity)
 
@@ -132,6 +145,7 @@ same cl-lib limit as CL), full numeric tower (rationals/complex), vectors
 | =when= =unless= =and= =or= =not=         | same                          |                                |
 | =(begin e…)=                             | =(progn e…)=                  |                                |
 | =(set! v e)=                             | =(setq v e)=                  |                                |
+| quasiquote =`(a ,b ,@c)=                  | Elisp backquote =`(a ,b ,@c)= | unquoted exprs Scheme-translated; nested rejected|
 | call =(OP a…)=, OP local                 | =(funcall OP a…)=             | L-SCM1                         |
 | call =(OP a…)=, OP global/builtin        | =(OP' a…)=                    | remap table                    |
 | predicate / list / arith builtins        | Elisp equivalents             | remap table (below)            |

@@ -146,10 +146,11 @@ identity), Scheme is Lisp-1 — one namespace — so the translator tracks
 lexical scope and a top-level define pre-pass to insert =funcall= where a
 bound variable is called like a function, and =#'fn= where a global
 function is passed by value.  =define= / =lambda= / =let= / =let*= /
-=letrec= / named-let / =if= / =cond= / =set!= / predicates (=?=) and
-mutators (=!=) map to their Elisp equivalents; =#t='t, =#f='nil.
-Continuations (=call/cc=), hygienic macros (=define-syntax=), multiple
-values and quasiquote are rejected loudly (later increments).  Correctness
+=letrec= / named-let / =if= / =cond= / =set!= / quasiquote
+=`(a ,b ,@c)= / predicates (=?=) and mutators (=!=) map to their Elisp
+equivalents; =#t='t, =#f='nil.  Continuations (=call/cc=), hygienic
+macros (=define-syntax=) and multiple values are rejected loudly (later
+increments).  Correctness
 is gated by *GNU Guile 3.0 as the differential oracle*
 (=test/ldb-scheme-guile-diff.el=, =make schemediff=): higher-order
 =funcall=, applied closures, =letrec= mutual recursion, named-let loops
@@ -157,7 +158,7 @@ and more all run identically to Guile.  It is further validated on *real
 Scheme* — nine verbatim *SICP* procedures (=test/ldb-scheme-sicp-test.el=):
 Newton's-method =sqrt=, higher-order =sum= / =accumulate=, tree-recursive
 =count-change=, and the symbolic-differentiation program =deriv= (SICP
-2.3.2) all match Guile.  =make schemediff= 24/24.
+2.3.2) all match Guile.  =make schemediff= 28/28.
 
 * Repository layout (planned)
 

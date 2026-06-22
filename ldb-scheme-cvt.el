@@ -188,10 +188,10 @@ Handles fixed `(a b)', dotted `(a . rest)' and bare `args' (all-args)."
   (let ((head (car form)))
     (cond
      ((not (symbolp head)) (ldb-scheme--apply-expr-to-ir form))
-     ((memq head (list ldb-ir-backquote-symbol ldb-ir-unquote-symbol
-                       ldb-ir-splice-symbol))
+     ((eq head ldb-ir-backquote-symbol) (ldb-scheme--backquote-to-ir form))
+     ((memq head (list ldb-ir-unquote-symbol ldb-ir-splice-symbol))
       (signal 'ldb-scheme-unsupported-form-error
-              (list "quasiquote/unquote unsupported in core v1" form)))
+              (list "stray unquote/splice outside quasiquote" form)))
      ((memq head ldb-scheme--reject-heads)
       (signal 'ldb-scheme-unsupported-form-error
               (list (format "%S unsupported by Scheme core translator" head) form)))
@@ -265,6 +265,31 @@ Handles fixed `(a b)', dotted `(a . rest)' and bare `args' (all-args)."
                :form (list :fn 'setq
                            :args (list (ldb-ir-make 'ref :form (list :name (nth 1 form)) :origin 'scheme)
                                        (ldb-scheme-form-to-ir (nth 2 form))))
+               :origin 'scheme))
+
+(defun ldb-scheme--bq-walk (tmpl)
+  "Walk a Scheme quasiquote TEMPLATE, translating unquoted exprs to IR.
+Literal template data is kept verbatim; `,E' / `,@E' have E translated
+with the Scheme (env/funcall-aware) translator.  Nested quasiquote is
+rejected loudly (core v1)."
+  (cond
+   ((and (consp tmpl) (eq (car tmpl) ldb-ir-backquote-symbol))
+    (signal 'ldb-scheme-unsupported-form-error
+            (list "nested quasiquote unsupported in core v1" tmpl)))
+   ((and (consp tmpl) (eq (car tmpl) ldb-ir-unquote-symbol))
+    (list 'ldb-unquote (ldb-scheme-form-to-ir (cadr tmpl))))
+   ((and (consp tmpl) (eq (car tmpl) ldb-ir-splice-symbol))
+    (list 'ldb-splice (ldb-scheme-form-to-ir (cadr tmpl))))
+   ((consp tmpl)
+    (cons (ldb-scheme--bq-walk (car tmpl)) (ldb-scheme--bq-walk (cdr tmpl))))
+   (t tmpl)))
+
+(defun ldb-scheme--backquote-to-ir (form)
+  "Translate a Scheme quasiquote FORM (the reader's `(\\` TEMPLATE)').
+Reuses the dialect-neutral `backquote' IR tag + emitter; only the walk
+differs (unquoted exprs go through the Scheme translator)."
+  (ldb-ir-make 'backquote
+               :form (list :template (ldb-scheme--bq-walk (cadr form)))
                :origin 'scheme))
 
 (defun ldb-scheme--lambda-to-ir (form)

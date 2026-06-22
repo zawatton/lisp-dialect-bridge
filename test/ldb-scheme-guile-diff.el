@@ -140,5 +140,23 @@
        (if (null? xs) acc (loop (cdr xs) (+ acc (car xs))))))"
   "(sum (list 10 20 30 40))")
 
+;; --- quasiquote ---
+(ldb-scheme-guile-diff-deftest ldb-scheme-guile-diff/quasiquote-unquote
+  ""
+  "(let ((b 5)) `(a ,b c))")
+
+(ldb-scheme-guile-diff-deftest ldb-scheme-guile-diff/quasiquote-splice
+  ""
+  "(let ((xs (list 1 2 3))) `(start ,@xs end))")
+
+(ldb-scheme-guile-diff-deftest ldb-scheme-guile-diff/quasiquote-computed
+  ""
+  "(let ((x 3)) `(square ,(* x x)))")
+
+;; quasiquote in a real-code idiom: symbolic-sum constructor (deriv-style).
+(ldb-scheme-guile-diff-deftest ldb-scheme-guile-diff/quasiquote-make-sum
+  "(define (make-sum a b) `(+ ,a ,b))"
+  "(make-sum 'x 3)")
+
 (provide 'ldb-scheme-guile-diff)
 ;;; ldb-scheme-guile-diff.el ends here

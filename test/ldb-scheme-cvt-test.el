@@ -99,8 +99,25 @@
   (should-error (ldb-scheme-translate-string "(values 1 2)")
                 :type 'ldb-scheme-unsupported-form-error))
 
-(ert-deftest ldb-scheme-cvt-test-reject-quasiquote ()
-  (should-error (ldb-scheme-translate-string "`(a ,b)")
+(ert-deftest ldb-scheme-cvt-test-quasiquote-golden ()
+  "Scheme quasiquote -> Elisp backquote; unquote/splice round-trip."
+  (should (equal '`(a ,b ,@c)
+                 (car (ldb-scheme-translate-string "`(a ,b ,@c)")))))
+
+(ert-deftest ldb-scheme-cvt-test-quasiquote-eval ()
+  "Unquoted exprs are env/funcall-aware and splice correctly."
+  (should (equal '(a 5 1 2)
+                 (ldb-scheme-cvt-test--eval
+                  "(let ((b 5) (c (list 1 2))) `(a ,b ,@c))")))
+  (should (equal '(sq 9)
+                 (ldb-scheme-cvt-test--eval "(let ((x 3)) `(sq ,(* x x)))"))))
+
+(ert-deftest ldb-scheme-cvt-test-reject-nested-quasiquote ()
+  (should-error (ldb-scheme-translate-string "`(a `(b ,c))")
+                :type 'ldb-scheme-unsupported-form-error))
+
+(ert-deftest ldb-scheme-cvt-test-reject-stray-unquote ()
+  (should-error (ldb-scheme-translate-string "(+ 1 ,x)")
                 :type 'ldb-scheme-unsupported-form-error))
 
 (provide 'ldb-scheme-cvt-test)
