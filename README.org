@@ -102,7 +102,7 @@ section "IR design".
 |-------+--------------------------------------------------------------------+---------------|
 | 0     | Design — IR sketch, macro hygiene strategy                          | SHIPPED       |
 | 1     | Guix recipe importer (Scheme =package= form → =pkg-define=)       | *SHIPPED*     |
-| 2     | R7RS Scheme subset → Elisp (general translator)                     | next          |
+| 2     | Scheme /core syntax/ → Elisp (Lisp-1→Lisp-2, =ldb-scheme-cvt.el=)    | *SHIPPED*     |
 | 3     | Bidirectional Elisp ↔ Scheme                                        | planned       |
 | 4a    | Common Lisp /core syntax/ → Elisp (defun/let/cond/labels/seq-fns)    | *SHIPPED*     |
 | 4b    | CL case / defstruct / sharp-quote / format / backquote               | *SHIPPED*     |
@@ -139,6 +139,21 @@ the binding macros =if-let= / =when-let= / =when-let*=, and =xor= (a named
 identically to SBCL.  Documented frontier: =multiple-value-call= (broken
 in Emacs cl-lib, rejected loudly) and the single-value-context =values=
 leak.  =make difftest= 48/48.
+
+Phase 2 adds a *Scheme core-syntax* translator (=ldb-scheme-cvt.el=;
+=ldb-scheme-translate-string= / =-file=).  Unlike CL (Lisp-2, near
+identity), Scheme is Lisp-1 — one namespace — so the translator tracks
+lexical scope and a top-level define pre-pass to insert =funcall= where a
+bound variable is called like a function, and =#'fn= where a global
+function is passed by value.  =define= / =lambda= / =let= / =let*= /
+=letrec= / named-let / =if= / =cond= / =set!= / predicates (=?=) and
+mutators (=!=) map to their Elisp equivalents; =#t='t, =#f='nil.
+Continuations (=call/cc=), hygienic macros (=define-syntax=), multiple
+values and quasiquote are rejected loudly (later increments).  Correctness
+is gated by *GNU Guile 3.0 as the differential oracle*
+(=test/ldb-scheme-guile-diff.el=, =make schemediff= 15/15): higher-order
+=funcall=, applied closures, =letrec= mutual recursion, named-let loops
+and more all run identically to Guile.
 
 * Repository layout (planned)
 

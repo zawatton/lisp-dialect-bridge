@@ -39,6 +39,7 @@
 (require 'ldb-guix-importer)
 (require 'ldb-cl)
 (require 'ldb-cl-macro)
+(require 'ldb-scheme-cvt)
 
 (provide 'lisp-dialect-bridge)
 ;;; lisp-dialect-bridge.el ends here

@@ -237,12 +237,20 @@ A per-clause var different from VAR is re-bound with `let'."
                    (plist-get (ldb-ir-form node) :clauses))))
     ('let
      (let* ((f (ldb-ir-form node))
-            (kw (if (plist-get f :star) 'let* 'let)))
+            ;; CL sets :star only; Scheme sets :kind let/let*/letrec.
+            (kw (or (plist-get f :kind) (if (plist-get f :star) 'let* 'let))))
        (append (list kw
                      (mapcar (lambda (b)
                                (if (cdr b)
                                    (list (car b) (ldb-emit-elisp-node (cadr b)))
                                  (list (car b))))
+                             (plist-get f :bindings)))
+               (mapcar #'ldb-emit-elisp-node (plist-get f :body)))))
+    ('named-let
+     (let ((f (ldb-ir-form node)))
+       (append (list 'named-let (plist-get f :name)
+                     (mapcar (lambda (b)
+                               (list (car b) (ldb-emit-elisp-node (cadr b))))
                              (plist-get f :bindings)))
                (mapcar #'ldb-emit-elisp-node (plist-get f :body)))))
     ('lambda

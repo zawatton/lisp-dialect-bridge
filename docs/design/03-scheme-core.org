@@ -1,0 +1,161 @@
+#+title: lisp-dialect-bridge — Phase 5: Scheme (R7RS) core → Elisp
+#+author: zawatton
+#+date: 2026-06-22
+#+property: status SHIPPED
+
+* STATUS
+
+SHIPPED — 2026-06-22.  Design was locked before code (CLAUDE.md
+invariant 3: the Lisp-1 → Lisp-2 decision below is load-bearing, like the
+CL macro-hygiene one).  Implements a Scheme /core syntax/ subset → Elisp
+on the shared IR, with GNU Guile 3.0 as the differential oracle (the
+Scheme analogue of SBCL for CL).  Reader: reuse the proven Phase-1
+=ldb-scheme.el= (preprocess + Emacs =read=); the translator is
+=ldb-scheme-cvt.el= so the Guix importer's reader stays untouched.
+
+Delivered: =ldb-scheme-cvt.el= (Scheme→IR with scope-tracked funcall /
+=#'= insertion + global-define pre-pass), emitter additions (=let= =:kind=
+for =letrec=, a =named-let= tag).  ERT: hermetic 15/15
+(=ldb-scheme-cvt-test.el= — golden funcall/=#'= shapes, behavioural eval,
+loud rejects), differential 15/15 vs Guile (=ldb-scheme-guile-diff.el=,
+=make schemediff=).  Repo-wide hermetic 64/64, CL =make difftest= 48/48
+(no regression), byte-compile warnings-as-errors clean.
+
+The differential suite proves correctness on the hard Lisp-1 cases: a
+parameter called like a function (=(apply-twice f x)= → =funcall=), a
+global function passed by value (=(map sq …)= → =#'sq=), an applied
+closure (=((adder 5) 10)=), =letrec= mutual recursion, named-let loops,
+=cond=/=else=, =filter=, =set!= mutation, predicates — all agree with
+Guile.  =#t=/=#f=/=()= are normalised to =t=/=nil=/=nil= for comparison.
+
+* Why Scheme is the harder target (vs CL near-identity)
+
+CL → Elisp is near-identity (both Lisp-2).  Scheme differs in ways that
+need real translation, not symbol remapping:
+
+1. *Lisp-1 vs Lisp-2* — Scheme has ONE namespace; Elisp has two.  A bound
+   variable can be called like a function (=(f x)= where =f= is a
+   parameter).  This is the central problem (see L-SCM1).
+2. *Booleans / truthiness* — Scheme: =#f= is the ONLY false value; =()=,
+   =0=, =""= are all TRUE.  Elisp: =nil= (= =()=) is false.  See L-SCM2.
+3. *Tail calls* — Scheme guarantees TCO; Elisp does not.  Deep
+   tail-recursion that a Scheme relies on may overflow in Elisp.  See
+   L-SCM3.
+4. *Naming* — predicates end =?= (=null?=, =eq?=), mutators end =!=
+   (=set!=, =set-car!=), booleans =#t=/=#f=.  Pure remap (easy part).
+
+* Locked decisions
+
+** L-SCM1. Lisp-1 → Lisp-2 = scope-tracked funcall insertion
+
+The translator threads a lexical environment =ENV= (the set of
+locally-bound symbols: =lambda= params, =let=/=let*=/=letrec= vars,
+named-let loop var + params, internal =define=).  A pre-pass over the
+top-level forms classifies each global =define= as a /function/
+(=(define (f …) …)= or =(define f (lambda …))=) or a /variable/
+(=(define x VAL)=, VAL not a lambda).
+
+- *Call position* =(OP . ARGS)=, OP a symbol, not a special form:
+  - OP ∈ ENV (a local binding) → =(funcall OP . ARGS')= — it holds a
+    procedure value.
+  - else → =(OP' . ARGS')= where OP' is the remapped global/builtin.
+- *Value position* (symbol NOT in call position):
+  - sym ∈ ENV → =sym= (a value).
+  - sym is a known function (global function from the pre-pass, or a
+    builtin in the remap/known-function table) → =#'sym'= (the function
+    cell as a value — needed for =(map f xs)= etc.).
+  - sym is a global /variable/ from the pre-pass → =sym=.
+  - otherwise → =sym= (unknown; differential test will catch a wrong
+    guess; we do not silently =#'= an unknown).
+
+=funcall= is represented with the existing =call= IR tag (=:fn 'funcall=,
+=:args (OP . ARGS')=); =#'sym= reuses the =function=/quote machinery —
+no new IR top-level keys (CLAUDE.md invariant 2).
+
+** L-SCM2. Booleans = =#t=→t, =#f=→nil; ()-as-true is a documented gap
+
+The reader maps =#t=→=t=, =#f=→=nil=.  Real Scheme overwhelmingly uses
+=#f= for false and does not rely on =()= / =0= being true in test
+position, so ordinary conditionals translate correctly.  The residual
+gap — =(if '() a b)= is =a= in Scheme but =b= in Elisp — is
+context-dependent and statically undetectable, so it is a *documented
+fidelity gap* (same class as CL's single-value =values= leak), not a
+loud reject.  Predicate results (=null?= etc. → t/nil) are exact.
+
+** L-SCM3. Tail calls = best-effort; deep TCO loops documented
+
+=named-let= → Emacs =named-let= (28+), =letrec= → =letrec=.  Elisp does
+not guarantee TCO, so a Scheme that loops via deep tail recursion can
+overflow =max-lisp-eval-depth=.  v1 does not transform tail recursion
+into iteration; this is a documented limitation.  (A later increment
+could special-case tail-self-calls in =named-let= into =while=.)
+
+** L-SCM4. Subset, reject loudly (mirrors CL invariant 4)
+
+Continuations (=call/cc=, =call-with-current-continuation=,
+=dynamic-wind=), hygienic macros (=define-syntax=/=syntax-rules= — the
+Scheme analogue of CL macros; a later increment can pre-expand via Guile,
+mirroring the SBCL path), multiple values (=values=/=call-with-values= —
+same cl-lib limit as CL), full numeric tower (rationals/complex), vectors
+=#(…)=, and ports/IO beyond =display=/=newline= are OUT and signal
+=ldb-scheme-unsupported-form-error=.
+
+* Scope — IN (Scheme core v1)
+
+| Scheme form                              | Elisp output                  | Notes                          |
+|------------------------------------------+-------------------------------+--------------------------------|
+| ints/floats/strings/=#t=/=#f=/symbols    | same / t / nil                | reader preprocess              |
+| =(define (f a b) body)=                  | =(defun f (a b) body)=        | global fn; ENV += a,b          |
+| =(define x val)=                         | =(defvar x val)= (top) / =setq=| val=lambda ⇒ defun + #'-able   |
+| =(lambda (a) body)=                      | =(lambda (a) body)=           | ENV += a; body funcall-aware   |
+| =(let ((v e)…) body)= / =let*=           | =(let …)= / =(let* …)=        | ENV += vars                    |
+| =(letrec ((v e)…) body)=                 | =(letrec …)=                  | mutual recursion               |
+| =(let loop ((v e)) body)=                | =(named-let loop …)=          | ENV += loop, vars              |
+| =(if c a b)= / =(if c a)=                | =(if …)=                      |                                |
+| =(cond (t e…) … (else e…))=              | =(cond … (t e…))=             | =else=→t; =>= rejected v1       |
+| =when= =unless= =and= =or= =not=         | same                          |                                |
+| =(begin e…)=                             | =(progn e…)=                  |                                |
+| =(set! v e)=                             | =(setq v e)=                  |                                |
+| call =(OP a…)=, OP local                 | =(funcall OP a…)=             | L-SCM1                         |
+| call =(OP a…)=, OP global/builtin        | =(OP' a…)=                    | remap table                    |
+| predicate / list / arith builtins        | Elisp equivalents             | remap table (below)            |
+
+Builtin remap (head + value position): =null?=→null =pair?=→consp
+=eq?=→eq =eqv?=→eql =equal?=→equal =zero?=→zerop =number?=→numberp
+=string?=→stringp =symbol?=→symbolp =procedure?=→functionp
+=set-car!=→setcar =set-cdr!=→setcdr =display=→princ
+=newline=→(λ ()(terpri)) via =(princ "\n")= =string-append=→concat
+=for-each=→mapc =map=→mapcar =modulo=→mod =remainder=→% =quotient=→/
+=add1/sub1/1+/1-=, =list=/=cons=/=car=/=cdr=/=append=/=reverse=/=length=
+pass through.  =vector?= etc. rejected (vectors OUT v1).
+
+* Pipeline
+
+#+begin_src text
+  Scheme source string
+    │ ldb-scheme-read-all-from-string   (preprocess #t/#f/#:kw/comments, then read)
+    ▼  top-level forms
+    │ ldb-scheme--collect-globals       (pre-pass: fn vs var classification)
+    ▼
+    │ ldb-scheme-form-to-ir  (ENV + globals threaded; funcall/#'-insertion)
+    ▼  dialect-neutral IR  (same tags as CL core)
+    │ ldb-emit-elisp-node
+    ▼  Elisp source (data)
+#+end_src
+
+* Validation
+
+GNU Guile 3.0 as differential oracle (=test/ldb-scheme-guile-diff.el=,
+=make schemediff=): run each program in Guile and through the bridge,
+compare normalised printed values — the Scheme twin of the SBCL CL suite.
+Plus hermetic golden/shape + behavioural ERT.  Target real Scheme code
+(SICP-style: =map/filter/fold=, higher-order, named-let loops) once the
+core lands.
+
+* IR tags
+
+Re-used (no new top-level keys): =literal= =ref= =quote= =call= =if=
+=cond= =let= =lambda= =defun= =defvar= =module=.  =funcall= is a =call=
+with =:fn 'funcall=; named-let needs a small =named-let= tag (or reuse
+=call= to =named-let=).  Decided at implementation: prefer reusing =call=
+to a =named-let= head over a new tag where the shape allows.
