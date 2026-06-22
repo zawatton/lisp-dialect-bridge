@@ -134,6 +134,26 @@ global =macro-function=), compiler-macros, read-macros beyond
 exactly SBCL's (unhygienic) expansion, so capture behaviour matches the
 CL program and the differential test is the gate.
 
+Real-library validation — alexandria (2026-06-22).  The 4a-4e pipeline
+was exercised on /verbatim/ definitions from a real CL utility library
+(Debian =cl-alexandria= 20240125.git8514d8e), pre-expanded through SBCL
+then translated and run, each diffed against SBCL on the same source
+(=test/ldb-cl-alexandria-test.el=, in =make difftest=).  Seven real
+definitions agree with SBCL: functions =ensure-list=, =flatten=
+(=labels= + =push= + =nreverse=), =iota= (a =&key= =loop for = ... then
+... repeat ... collect=) and =clamp=; and the binding macros =if-let=,
+=when-let=, =when-let*= (whose expanders use destructuring =&body=,
+=labels= and backquote — all run in SBCL, the bridge only sees the
+expansion).  =make difftest= 32/32.  The /frontier/ was probed and
+rejects loudly (never silent): =proper-list-p= uses the =do= loop
+(unmapped); =xor= expands via alexandria's own =with-gensyms= to =block=
+/ =return-from= / =values= (non-local exit + multiple values
+unsupported); =curry= / =compose= use =multiple-value-call= + a
+=define-compiler-macro=; =hash-table-keys= depends on another alexandria
+function.  So the bridge ingests the self-contained utility/binding slice
+of a real library today, with a clear documented boundary at =do= loops,
+non-local exit and multiple values.
+
 Builds on the Phase 0 IR contract (=01-overview.org= L1/L2).  Re-uses
 the documented general-code IR tags; this doc only *adds* tags, never
 new top-level IR keys (per CLAUDE.md invariant 2).

@@ -2,7 +2,7 @@ EMACS ?= emacs
 SRC = ldb-ir.el ldb-scheme.el ldb-emit-elisp.el ldb-guix-importer.el ldb-cl.el ldb-cl-macro.el lisp-dialect-bridge.el
 TEST_SRC = test/ldb-guix-importer-test.el test/ldb-cl-test.el
 # Differential + macro suites: need an external SBCL on PATH (skip cleanly without).
-DIFF_SRC = test/ldb-cl-sbcl-diff.el test/ldb-cl-macro-test.el
+DIFF_SRC = test/ldb-cl-sbcl-diff.el test/ldb-cl-macro-test.el test/ldb-cl-alexandria-test.el
 
 EMACS_BATCH = $(EMACS) -Q --batch -L . -L test
 

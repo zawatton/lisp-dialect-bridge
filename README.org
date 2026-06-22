@@ -126,8 +126,15 @@ standard =when=/=loop=/=defun=/... for the normal handlers), drops the
 =defmacro= forms, and emits downcased CL the existing translator
 ingests.  Use =ldb-cl-translate-string-expanding= /
 =ldb-cl-translate-file-expanding= for sources that define and use
-macros.  Correctness is gated by the same SBCL differential discipline
-(=make difftest= 20/20).
+macros.  Correctness is gated by the same SBCL differential discipline.
+
+This pipeline is validated on a *real CL library* — verbatim definitions
+from =alexandria= (=test/ldb-cl-alexandria-test.el=): the functions
+=ensure-list=, =flatten=, =iota=, =clamp= and the binding macros
+=if-let= / =when-let= / =when-let*= translate and run identically to
+SBCL.  The documented frontier (rejected loudly): =do= loops, non-local
+exit (=block= / =return-from=) and multiple values.  =make difftest=
+32/32.
 
 * Repository layout (planned)
 
