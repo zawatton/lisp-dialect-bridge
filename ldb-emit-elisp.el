@@ -248,6 +248,15 @@ recipe — the user must add it after import.")
                                        (mapcar #'ldb-emit-elisp-node (nth 2 d))))
                              (plist-get f :defs)))
                (mapcar #'ldb-emit-elisp-node (plist-get f :body)))))
+    ('defstruct
+     (let ((f (ldb-ir-form node)))
+       (append (list 'cl-defstruct (plist-get f :spec))
+               (when (plist-get f :doc) (list (plist-get f :doc)))
+               (mapcar (lambda (s)
+                         (if (symbolp s) s
+                           (cons (car s)
+                                 (cons (ldb-emit-elisp-node (cadr s)) (cddr s)))))
+                       (plist-get f :slots)))))
     ('case
      (let ((f (ldb-ir-form node)))
        (append (list (plist-get f :head) (ldb-emit-elisp-node (plist-get f :key)))

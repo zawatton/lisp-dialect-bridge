@@ -121,7 +121,7 @@ Everything else (Lisp-2 symbols, keywords, t/nil, #') reads natively."
   (or (cdr (assq sym ldb-cl--remap)) sym))
 
 (defconst ldb-cl--reject-heads
-  '(defclass defmethod defgeneric defstruct
+  '(defclass defmethod defgeneric
     define-condition handler-case handler-bind restart-case restart-bind
     defmacro macrolet symbol-macrolet define-symbol-macro define-compiler-macro
     loop do do* values multiple-value-bind multiple-value-call
@@ -200,6 +200,7 @@ Returns nil for a `declare' form (callers drop it from bodies)."
      ((eq head 'quote) (ldb-ir-make 'quote :form (list :datum (cadr form)) :origin 'cl))
      ((eq head 'declare) nil)
      ((eq head 'the) (ldb-cl-form-to-ir (nth 2 form)))
+     ((eq head 'function) (ldb-cl--function-to-ir form))
      ((eq head 'if)
       (ldb-ir-make 'if
                    :form (list :cond (ldb-cl-form-to-ir (nth 1 form))
@@ -212,6 +213,7 @@ Returns nil for a `declare' form (callers drop it from bodies)."
      ((eq head 'lambda) (ldb-cl--lambda-to-ir form))
      ((eq head 'defun) (ldb-cl--defun-to-ir form))
      ((memq head '(defvar defparameter defconstant)) (ldb-cl--defvar-to-ir form))
+     ((eq head 'defstruct) (ldb-cl--defstruct-to-ir form))
      ((memq head '(case typecase ecase etypecase ccase)) (ldb-cl--case-to-ir form))
      ((memq head '(dolist dotimes)) (ldb-cl--bind-to-ir form))
      ((memq head '(labels flet)) (ldb-cl--locals-to-ir form))
@@ -289,6 +291,44 @@ Returns nil for a `declare' form (callers drop it from bodies)."
                              :iter (ldb-cl-form-to-ir (nth 1 spec))
                              :result (when (nth 2 spec) (ldb-cl-form-to-ir (nth 2 spec)))
                              :body (ldb-cl--map-forms (cddr form)))
+                 :origin 'cl)))
+
+(defun ldb-cl--function-to-ir (form)
+  "Translate a `function' special form (sharp-quote) in FORM.
+A symbol designator is remapped via `ldb-cl--remap-head' (so a
+sharp-quoted oddp becomes cl-oddp); a literal lambda is translated
+normally."
+  (let ((target (cadr form)))
+    (ldb-ir-make 'call
+                 :form (list :fn 'function
+                             :args (list (if (symbolp target)
+                                             (ldb-ir-make 'ref
+                                                          :form (list :name (ldb-cl--remap-head target))
+                                                          :origin 'cl)
+                                           (ldb-cl-form-to-ir target))))
+                 :origin 'cl)))
+
+(defun ldb-cl--struct-slot (s)
+  "Translate one defstruct slot S (NAME / (NAME DEFAULT . OPTS))."
+  (cond
+   ((symbolp s) s)
+   ((consp s)
+    (if (cdr s)
+        (cons (car s) (cons (ldb-cl-form-to-ir (cadr s)) (cddr s)))
+      s))
+   (t (signal 'ldb-cl-unsupported-form-error (list "bad defstruct slot" s)))))
+
+(defun ldb-cl--defstruct-to-ir (form)
+  "Translate a `defstruct' FORM to a `cl-defstruct' IR node.
+The name-or-(name options) spec is kept verbatim; slot defaults are
+translated as expressions."
+  (let* ((spec (nth 1 form))
+         (rest (cddr form))
+         (doc (and (stringp (car rest)) (car rest)))
+         (slots (if doc (cdr rest) rest)))
+    (ldb-ir-make 'defstruct
+                 :form (list :spec spec :doc doc
+                             :slots (mapcar #'ldb-cl--struct-slot slots))
                  :origin 'cl)))
 
 (defun ldb-cl--case-to-ir (form)

@@ -24,6 +24,13 @@ reject-loudly invariant) — both closed in this increment
 (=char/schar→aref=, =case/typecase/ecase→cl-case=, =defconstant→defvar=,
 binding/clause forms moved to the loud reject list).
 
+A second 4b increment adds =defstruct= → =cl-defstruct= (slot defaults
+translated) and sharp-quote function-designator remapping (so a
+sharp-quoted =oddp= becomes =cl-oddp=).  Validated on a =defstruct=
+binary-search-tree (insert/inorder via =setf= places + recursion) and a
+genetic-programming fitness selector (=cl-sort= =:key= sharp-quoted
+accessor) — all PASS.  ERT 29/29, byte-compile clean.
+
 Builds on the Phase 0 IR contract (=01-overview.org= L1/L2).  Re-uses
 the documented general-code IR tags; this doc only *adds* tags, never
 new top-level IR keys (per CLAUDE.md invariant 2).
@@ -68,6 +75,8 @@ means Scheme still benefits later.
 | =case= =typecase= =ecase=                 | =cl-case= =cl-typecase= =cl-ecase= | clause keys preserved (4b)     |
 | =char= =schar= =svref= (seq ref)          | =aref=                              | char-code/code-char→identity (4b)|
 | =defconstant=                             | =defvar=                            | (4b)                           |
+| =defstruct=                               | =cl-defstruct=                      | slot defaults translated (4b)  |
+| sharp-quote =#'fn=                         | =#'fn= (designator remapped)        | sharp-quoted oddp→cl-oddp (4b) |
 
 Lambda-list handling: a CL λ-list needs =cl-defun=/=cl-function= iff it
 contains =&key=, =&aux=, or an =&optional=/=&rest= var with a default
@@ -78,7 +87,7 @@ Declarations =(declare …)= and =(the TYPE expr)= are *stripped*
 
 * Scope — OUT (reject loudly, =ldb-cl-unsupported-form-error=)
 
-CLOS (=defclass/defmethod/defgeneric=), =defstruct=, conditions
+CLOS (=defclass/defmethod/defgeneric=), conditions
 (=define-condition/handler-case/restart-case=), macros
 (=defmacro/macrolet/define-symbol-macro=), =loop=, multiple values
 (=values/multiple-value-bind=), packages
@@ -166,8 +175,9 @@ runs*, not just that it pretty-prints.
 
 * Open questions
 
-- OQ1. =defstruct= → =cl-defstruct= is tempting (cl-lib has it) but
-  option syntax diverges; deferred to a 4b increment.
+- OQ1. =defstruct= → =cl-defstruct= — DONE (4b).  Name/option spec is
+  kept verbatim (cl-defstruct accepts the same =(:constructor ...)= etc.),
+  slot defaults are translated.  Exotic =:type vector= layouts untested.
 - OQ2. =format= directive translation (=~a~%= → =%s\n=) is a separate
   small module; core rejects =format= for now to stay honest.
 - OQ3. Macro translation stays gated on L3 (pre-expand vs native

@@ -148,6 +148,23 @@
   (should-not (funcall 'ldb-cl-test-vp 'foo))
   (fmakunbound 'ldb-cl-test-vp))
 
+(ert-deftest ldb-cl-test-function-designator ()
+  "#'cl-builtin is remapped inside (function ...); user fns pass through."
+  (should (equal '(cl-remove-if #'cl-oddp (list 1 2 3 4))
+                 (ldb-cl-translate-form
+                  (ldb-cl-read-from-string "(remove-if #'oddp (list 1 2 3 4))"))))
+  (should (equal '(2 4)
+                 (ldb-cl-test--eval "(remove-if #'oddp (list 1 2 3 4))"))))
+
+(ert-deftest ldb-cl-test-eval-defstruct ()
+  "defstruct -> cl-defstruct; constructor/accessors work."
+  (should (equal '(cl-defstruct ldb-cl-test-pt (x 0) (y 0))
+                 (ldb-cl-translate-form
+                  (ldb-cl-read-from-string "(defstruct ldb-cl-test-pt (x 0) (y 0))"))))
+  (ldb-cl-test--eval "(defstruct ldb-cl-test-pt (x 0) (y 0))")
+  (should (= 3 (ldb-cl-test--eval
+                "(ldb-cl-test-pt-x (make-ldb-cl-test-pt :x 3 :y 4))"))))
+
 (ert-deftest ldb-cl-test-reject-destructuring-bind ()
   "destructuring-bind (a binding form, not core) signals."
   (should-error (ldb-cl-translate-string "(destructuring-bind (a b) lst (+ a b))")
