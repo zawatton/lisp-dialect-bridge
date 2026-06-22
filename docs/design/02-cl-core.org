@@ -35,8 +35,15 @@ A third 4b increment adds a =format= translator: control-string
 directives (=~a ~s ~d ~f ~x ~% ~~=, literal =%= → =%%=) with
 destinations =nil= (→ =format=) and =t= (→ =(princ (format ...))=);
 parameterized / iteration / conditional directives are rejected loudly.
-Validated on a GP individual report and a multi-line banner.  ERT 34/34,
-byte-compile warnings-as-errors clean.
+Validated on a GP individual report and a multi-line banner.
+
+A fourth 4b increment adds backquote/quasiquote.  CL and Elisp share the
+reader representation (a backquote reads as =(\` (a (\, b) (\,@ c)))= in
+both), so a backquote round-trips while its unquoted sub-expressions are
+translated and remapped; nested backquote is rejected loudly.  Validated
+on a backquote-based symbolic differentiator (builds its result
+expressions) and splice-based form builders.  ERT 37/37, byte-compile
+warnings-as-errors clean.
 
 Builds on the Phase 0 IR contract (=01-overview.org= L1/L2).  Re-uses
 the documented general-code IR tags; this doc only *adds* tags, never
@@ -85,6 +92,7 @@ means Scheme still benefits later.
 | =defstruct=                               | =cl-defstruct=                      | slot defaults translated (4b)  |
 | sharp-quote =#'fn=                         | =#'fn= (designator remapped)        | sharp-quoted oddp→cl-oddp (4b) |
 | =(format nil/t CTRL ...)=                  | =(format …)= / =(princ (format …))= | ~a~s~d~f~x~%~~ ; params rejected (4b)|
+| backquote / unquote / splice               | same (Elisp shares the reader)      | unquoted exprs translated; nested rejected (4b)|
 
 Lambda-list handling: a CL λ-list needs =cl-defun=/=cl-function= iff it
 contains =&key=, =&aux=, or an =&optional=/=&rest= var with a default
@@ -101,7 +109,7 @@ CLOS (=defclass/defmethod/defgeneric=), conditions
 (=values/multiple-value-bind=), packages
 (=in-package/defpackage=), I/O with divergent semantics
 (=print/princ/write/read=), =tagbody/go=, =eval-when=,
-quasiquote/backquote, =call/cc=-equivalents, binding/clause forms
+nested backquote, =call/cc=-equivalents, binding/clause forms
 (=destructuring-bind/with-slots/with-accessors=).  Each signals with
 the offending form — never silent.  These land in later increments
 (macros gated on the L3 hygiene decision).

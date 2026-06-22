@@ -72,5 +72,18 @@ Field tuples are stored as 2-element lists, so callers should use
   "Return the symbol name of a ref NODE."
   (plist-get (ldb-ir-form node) :name))
 
+;;;; --- backquote reader symbols ----------------------------------------------
+
+;; Emacs `read' represents `(a ,b ,@c)' as (\` (a (\, b) (\,@ c))).
+;; Common Lisp uses the identical reader symbols, so a CL backquote
+;; round-trips through these unchanged.
+
+(defconst ldb-ir-backquote-symbol (intern "`")
+  "The symbol Emacs `read' uses for a backquote form head.")
+(defconst ldb-ir-unquote-symbol (intern ",")
+  "The symbol Emacs `read' uses for an unquote.")
+(defconst ldb-ir-splice-symbol (intern ",@")
+  "The symbol Emacs `read' uses for an unquote-splice.")
+
 (provide 'ldb-ir)
 ;;; ldb-ir.el ends here

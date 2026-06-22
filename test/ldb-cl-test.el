@@ -192,6 +192,23 @@
   (should-error (ldb-cl-translate-string "(format s \"~a\" x)")
                 :type 'ldb-cl-unsupported-form-error))
 
+(ert-deftest ldb-cl-test-backquote-golden ()
+  "Backquote keeps literal template; unquoted exprs are translated/remapped."
+  (should (equal '`(+ ,x ,(cl-incf y) 1)
+                 (ldb-cl-translate-form
+                  (ldb-cl-read-from-string "`(+ ,x ,(incf y) 1)")))))
+
+(ert-deftest ldb-cl-test-eval-backquote ()
+  "Translated backquote builds the right structure at runtime."
+  (should (equal '(+ 5 1) (ldb-cl-test--eval "(let ((x 5)) `(+ ,x 1))")))
+  (should (equal '(a b c d)
+                 (ldb-cl-test--eval "(let ((xs '(b c))) `(a ,@xs d))"))))
+
+(ert-deftest ldb-cl-test-reject-nested-backquote ()
+  "Nested backquote is rejected loudly (core v1)."
+  (should-error (ldb-cl-translate-string "`(a `(b ,c))")
+                :type 'ldb-cl-unsupported-form-error))
+
 (ert-deftest ldb-cl-test-reject-destructuring-bind ()
   "destructuring-bind (a binding form, not core) signals."
   (should-error (ldb-cl-translate-string "(destructuring-bind (a b) lst (+ a b))")

@@ -181,6 +181,18 @@ recipe — the user must add it after import.")
   "Translate a (mostly CL) lambda list LL to an Elisp lambda list."
   (mapcar (lambda (x) (if (eq x '&body) '&rest x)) ll))
 
+(defun ldb-emit-elisp--bq-template (tmpl)
+  "Rebuild a backquote template TMPL, emitting Elisp for unquoted IR nodes."
+  (cond
+   ((and (consp tmpl) (eq (car tmpl) 'ldb-unquote))
+    (list ldb-ir-unquote-symbol (ldb-emit-elisp-node (cadr tmpl))))
+   ((and (consp tmpl) (eq (car tmpl) 'ldb-splice))
+    (list ldb-ir-splice-symbol (ldb-emit-elisp-node (cadr tmpl))))
+   ((consp tmpl)
+    (cons (ldb-emit-elisp--bq-template (car tmpl))
+          (ldb-emit-elisp--bq-template (cdr tmpl))))
+   (t tmpl)))
+
 (defun ldb-emit-elisp-node (node)
   "Emit Elisp source (as data) from a general IR NODE."
   (pcase (ldb-ir-tag node)
@@ -248,6 +260,9 @@ recipe — the user must add it after import.")
                                        (mapcar #'ldb-emit-elisp-node (nth 2 d))))
                              (plist-get f :defs)))
                (mapcar #'ldb-emit-elisp-node (plist-get f :body)))))
+    ('backquote
+     (list ldb-ir-backquote-symbol
+           (ldb-emit-elisp--bq-template (plist-get (ldb-ir-form node) :template))))
     ('format
      (let* ((f (ldb-ir-form node))
             (call (cons 'format (cons (plist-get f :control)

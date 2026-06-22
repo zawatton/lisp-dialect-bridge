@@ -133,8 +133,10 @@ Everything else (Lisp-2 symbols, keywords, t/nil, #') reads natively."
     tagbody go eval-when locally proclaim declaim
     destructuring-bind with-slots with-accessors prog prog*
     delay force
-    \` \, \,@ quasiquote unquote unquote-splicing)
-  "CL forms rejected by the core translator (signal, never silent).")
+    \, \,@ quasiquote unquote unquote-splicing)
+  "CL forms rejected by the core translator (signal, never silent).
+Stray unquote/splice outside a backquote, and explicit
+`quasiquote' forms, are rejected; backquote itself is handled.")
 
 ;;;; --- lambda-list analysis --------------------------------------------------
 
@@ -198,6 +200,7 @@ Returns nil for a `declare' form (callers drop it from bodies)."
       (signal 'ldb-cl-unsupported-form-error
               (list (format "%S unsupported by CL core translator" head) form)))
      ((eq head 'quote) (ldb-ir-make 'quote :form (list :datum (cadr form)) :origin 'cl))
+     ((eq head ldb-ir-backquote-symbol) (ldb-cl--backquote-to-ir form))
      ((eq head 'declare) nil)
      ((eq head 'the) (ldb-cl-form-to-ir (nth 2 form)))
      ((eq head 'function) (ldb-cl--function-to-ir form))
@@ -293,6 +296,28 @@ Returns nil for a `declare' form (callers drop it from bodies)."
                              :result (when (nth 2 spec) (ldb-cl-form-to-ir (nth 2 spec)))
                              :body (ldb-cl--map-forms (cddr form)))
                  :origin 'cl)))
+
+(defun ldb-cl--bq-walk (tmpl)
+  "Walk a backquote TEMPLATE, translating unquoted expressions to IR.
+Literal template data is kept verbatim; `(\\, E)' / `(\\,@ E)' have E
+translated.  Nested backquote is rejected loudly (core v1)."
+  (cond
+   ((and (consp tmpl) (eq (car tmpl) ldb-ir-backquote-symbol))
+    (signal 'ldb-cl-unsupported-form-error
+            (list "nested backquote unsupported in core v1" tmpl)))
+   ((and (consp tmpl) (eq (car tmpl) ldb-ir-unquote-symbol))
+    (list 'ldb-unquote (ldb-cl-form-to-ir (cadr tmpl))))
+   ((and (consp tmpl) (eq (car tmpl) ldb-ir-splice-symbol))
+    (list 'ldb-splice (ldb-cl-form-to-ir (cadr tmpl))))
+   ((consp tmpl)
+    (cons (ldb-cl--bq-walk (car tmpl)) (ldb-cl--bq-walk (cdr tmpl))))
+   (t tmpl)))
+
+(defun ldb-cl--backquote-to-ir (form)
+  "Translate a backquote FORM `(\\` TEMPLATE)'."
+  (ldb-ir-make 'backquote
+               :form (list :template (ldb-cl--bq-walk (cadr form)))
+               :origin 'cl))
 
 (defun ldb-cl--format-control (s)
   "Convert a Common Lisp FORMAT control string S to an Elisp one.
