@@ -28,6 +28,22 @@ closure (=((adder 5) 10)=), =letrec= mutual recursion, named-let loops,
 =cond=/=else=, =filter=, =set!= mutation, predicates — all agree with
 Guile.  =#t=/=#f=/=()= are normalised to =t=/=nil=/=nil= for comparison.
 
+Real-program validation — SICP (2026-06-22).  Nine /verbatim/ canonical
+procedures from SICP (Abelson & Sussman) translate and run identically to
+Guile (=test/ldb-scheme-sicp-test.el=, folded into =make schemediff=;
+24/24 total) — the Scheme analogue of the alexandria CL validation:
+Newton's-method =sqrt= (1.1.7), higher-order =sum= (1.3.1, =term=/=next=
+procedure params → =funcall=, =cube=/=inc= by value → =#'=), tree
+recursion =count-change= (1.2.2 → 292), =accumulate= fold (2.2.3, =+=/=*=
+by value), and the symbolic-differentiation program =deriv= (2.3.2) with
+its full =make-sum= / =make-product= / =variable?= / =same-variable?= …
+support — the GOFAI classic, the Scheme twin of the CL PAIP validation.
+=(deriv '(* (* x y) (+ x 3)) 'x)= and friends build and simplify symbolic
+expressions byte-for-byte like Guile.  This confirms the core ingests
+self-contained real Scheme (recursion, higher-order, symbolic list code)
+today; the frontier stays at continuations, hygienic macros, multiple
+values and quasiquote.
+
 * Why Scheme is the harder target (vs CL near-identity)
 
 CL → Elisp is near-identity (both Lisp-2).  Scheme differs in ways that

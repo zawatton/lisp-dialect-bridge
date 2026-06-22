@@ -4,7 +4,7 @@ TEST_SRC = test/ldb-guix-importer-test.el test/ldb-cl-test.el test/ldb-scheme-cv
 # Differential + macro suites: need an external SBCL on PATH (skip cleanly without).
 DIFF_SRC = test/ldb-cl-sbcl-diff.el test/ldb-cl-macro-test.el test/ldb-cl-alexandria-test.el
 # Scheme differential suite: needs an external GNU Guile on PATH.
-SCHEME_DIFF_SRC = test/ldb-scheme-guile-diff.el
+SCHEME_DIFF_SRC = test/ldb-scheme-guile-diff.el test/ldb-scheme-sicp-test.el
 
 EMACS_BATCH = $(EMACS) -Q --batch -L . -L test
 
