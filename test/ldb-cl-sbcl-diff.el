@@ -141,5 +141,38 @@ value is compared.  `skip-unless' is expanded inline per ERT rules."
   ""
   "(do ((i 0 (1+ i))) (nil) (when (= i 3) (return (* i 100))))")
 
+;; Named block / return-from to a user block (4g).
+(ldb-cl-sbcl-diff-deftest ldb-cl-sbcl-diff/block-return-from
+  "(defun ff (lst) (block found (dolist (x lst) (when (evenp x) (return-from found x))) nil))"
+  "(ff (list 1 3 4 6 7))")
+
+(ldb-cl-sbcl-diff-deftest ldb-cl-sbcl-diff/block-nested
+  ""
+  "(block outer (block inner (return-from outer 42)) 99)")
+
+;; Multiple values — only faithful inside explicit consumers; we always wrap
+;; in multiple-value-list / nth-value / multiple-value-bind so SBCL's ~S sees
+;; the same shape the bridge produces (bare single-value context leaks a list
+;; under Emacs cl-lib and is the documented frontier).
+(ldb-cl-sbcl-diff-deftest ldb-cl-sbcl-diff/mvb-values
+  ""
+  "(multiple-value-bind (a b) (values 10 20) (+ a b))")
+
+(ldb-cl-sbcl-diff-deftest ldb-cl-sbcl-diff/mv-list-values
+  ""
+  "(multiple-value-list (values 1 2 3))")
+
+(ldb-cl-sbcl-diff-deftest ldb-cl-sbcl-diff/values-list-roundtrip
+  ""
+  "(multiple-value-list (values-list (list 7 8 9)))")
+
+(ldb-cl-sbcl-diff-deftest ldb-cl-sbcl-diff/nth-value-floor
+  ""
+  "(nth-value 1 (floor 17 5))")
+
+(ldb-cl-sbcl-diff-deftest ldb-cl-sbcl-diff/block-returns-values
+  "(defun two () (block b (return-from b (values 5 6))))"
+  "(multiple-value-list (two))")
+
 (provide 'ldb-cl-sbcl-diff)
 ;;; ldb-cl-sbcl-diff.el ends here

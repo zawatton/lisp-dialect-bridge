@@ -166,7 +166,31 @@ atom inputs.  Hermetic tests cover the golden =cl-do= shape and runtime
 (=do= accumulate, =do*= sequential binding, =do= +=return=); differential
 tests cover the same plus =proper-list-p=.  =make test= 46/46,
 =make difftest= 38/38, byte-compile clean.  Named =block= / =return-from=
-to a user block and multiple =values= remain the frontier.
+to a user block and multiple =values= are addressed in 4g below.
+
+A 4g increment closes named non-local exit + the tractable part of
+multiple values.  Named =block= / =return-from= to a /user/ block already
+worked (=block= → =cl-block=, =return-from= → =cl-return-from= were in the
+remap and cl-block matches its name by =eq=, so even gensym/uninterned
+block names round-trip via SBCL's =#N==/=#N#= printer); 4g formalises it
+with golden + behavioural + differential tests (find-first-even,
+fall-through, nested outer exit).  For multiple values, =values= →
+=cl-values=, the new =values-list= → =cl-values-list=, =nth-value= →
+=cl-nth-value= and =multiple-value-list= → =cl-multiple-value-list= are
+faithful *inside an explicit multiple-value consumer*
+(=multiple-value-bind= / =multiple-value-list= / =nth-value=): there the
+bridge matches SBCL on both primary and secondary values.  This pulled
+alexandria's =xor= (a named =block= built by the library's own
+=with-gensyms=, returning =(values primary secondary)=) into the covered
+slice — read through =multiple-value-list= it agrees with SBCL on
+one-true / two-true / none-true.  Two honest limits remain, both rooted
+in Emacs cl-lib (not the translator): (1) =multiple-value-call= is broken
+under cl-lib, so it is now *rejected loudly* rather than mis-emitted;
+(2) =(values a b)= in *single-value* context leaks the list =(a b)=
+instead of collapsing to the primary =a= — context-dependent and
+statically undetectable, so it stays a documented fidelity gap (use an
+explicit consumer).  =make test= 49/49, =make difftest= 48/48,
+byte-compile clean.
 
 Builds on the Phase 0 IR contract (=01-overview.org= L1/L2).  Re-uses
 the documented general-code IR tags; this doc only *adds* tags, never
@@ -205,7 +229,8 @@ means Scheme still benefits later.
 | =incf= =decf=                             | =cl-incf= =cl-decf=                 | place form preserved           |
 | =dolist= =dotimes=                        | same                                 | binding spec handled           |
 | =labels= =flet=                           | =cl-labels= =cl-flet=              | local recursion (AI code)      |
-| =block= =return-from=                     | =cl-block= =cl-return-from=        |                                |
+| =block= =return-from=                     | =cl-block= =cl-return-from=        | user-block non-local exit; gensym names round-trip (4g)|
+| =values= =values-list= =nth-value= =multiple-value-list= | =cl-values= =cl-values-list= =cl-nth-value= =cl-multiple-value-list= | faithful inside an explicit mv-consumer; single-value-context leak documented (4g)|
 | =catch= =throw= =unwind-protect= =ignore-errors= | same                          | elisp-identical                |
 | seq fns =reduce/remove/remove-if/find/position/count/every/some/member/assoc/sort= | =cl-*= | cl-lib equivalents |
 | list fns =first/second/third/fourth/rest= | =car/cadr/caddr/cadddr/cdr=         |                                |
@@ -239,9 +264,18 @@ condition definitions
 (=in-package/defpackage=), I/O with divergent semantics
 (=print/princ/write/read=), =tagbody/go=, =eval-when=,
 nested backquote, =call/cc=-equivalents, binding/clause forms
-(=destructuring-bind/with-slots/with-accessors=).  Each signals with
-the offending form — never silent.  These land in later increments
-(macros gated on the L3 hygiene decision).
+(=destructuring-bind/with-slots/with-accessors=), and
+=multiple-value-call= / =multiple-value-prog1= (Emacs cl-lib cannot
+splice multiple values into a call, so these are rejected rather than
+mis-emitted — 4g).  Each signals with the offending form — never silent.
+These land in later increments (macros gated on the L3 hygiene decision).
+
+Note (multiple values, 4g): =values= and friends are translated and are
+correct *inside an explicit consumer* (=multiple-value-bind= /
+=multiple-value-list= / =nth-value=).  In single-value context Emacs
+cl-lib's =cl-values= leaks the list =(a b)= rather than the primary =a=;
+this is context-dependent and statically undetectable, so it is a
+documented fidelity gap (wrap in a consumer) rather than a loud reject.
 
 Rationale: a narrow, *correct* core that runs real algorithms beats a
 broad, subtly-wrong translator.  Matches CLAUDE.md invariant 4.

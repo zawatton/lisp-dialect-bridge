@@ -111,6 +111,7 @@ section "IR design".
 | 4d'   | CL conditions (handler-case → condition-case, partial)              | *SHIPPED*     |
 | 4e    | CL macros via SBCL selective pre-expand (=ldb-cl-macro.el=)          | *SHIPPED*     |
 | 4f    | CL =do= / =do*= iteration → =cl-do= / =cl-do*=                       | *SHIPPED*     |
+| 4g    | Named =block= / =return-from= + multiple values (consumer contexts)  | *SHIPPED*     |
 | 5     | Nix expression → Elisp IR (so anvil-pkg can ingest nixpkgs natively)| research      |
 | 6+    | Clojure subset (JVM-bound, very long term)                          | not promised  |
 
@@ -131,11 +132,13 @@ macros.  Correctness is gated by the same SBCL differential discipline.
 
 This pipeline is validated on a *real CL library* — verbatim definitions
 from =alexandria= (=test/ldb-cl-alexandria-test.el=): the functions
-=ensure-list=, =flatten=, =iota=, =clamp=, =proper-list-p= (a =do= loop)
-and the binding macros =if-let= / =when-let= / =when-let*= translate and
-run identically to SBCL.  The documented frontier (rejected loudly):
-named-block non-local exit (=block= / =return-from=) and multiple values.
-=make difftest= 38/38.
+=ensure-list=, =flatten=, =iota=, =clamp=, =proper-list-p= (a =do= loop),
+the binding macros =if-let= / =when-let= / =when-let*=, and =xor= (a named
+=block= built by alexandria's own =with-gensyms=, returning multiple
+=values=, read through =multiple-value-list=) translate and run
+identically to SBCL.  Documented frontier: =multiple-value-call= (broken
+in Emacs cl-lib, rejected loudly) and the single-value-context =values=
+leak.  =make difftest= 48/48.
 
 * Repository layout (planned)
 

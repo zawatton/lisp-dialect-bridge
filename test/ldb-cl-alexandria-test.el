@@ -23,19 +23,21 @@
 ;; Gated on SBCL (`skip-unless'); folded into `make difftest'.
 ;;
 ;; `proper-list-p' (a `do' loop with `return') is covered since the do-loop
-;; increment.
+;; increment.  `xor' (a NAMED `block' / `return-from' + multiple `values',
+;; expanded via alexandria's own `with-gensyms') is covered when read through
+;; an explicit multiple-value consumer — its primary AND secondary value then
+;; match SBCL.  (Bare single-value `(xor ...)' would leak a list under Emacs
+;; cl-lib; see the `values' note in 02-cl-core.org — that is the frontier.)
 ;;
 ;; Honest coverage boundary (probed against real alexandria, all REJECTED
 ;; *loudly* via `ldb-cl-unsupported-form-error' — never silently
 ;; mis-translated):
-;;   * `xor' expands (via alexandria's own `with-gensyms') to `block' /
-;;     `return-from' a NAMED block — user blocks + multiple `values' are
-;;     unsupported (do/dotimes/loop implicit nil-block `return' IS covered).
-;;   * `curry' / `compose' use `multiple-value-call' and a
-;;     `define-compiler-macro'; `hash-table-keys' depends on another
-;;     alexandria function (`maphash-keys').  All out for v1.
+;;   * `curry' / `compose' use `multiple-value-call' (broken in Emacs cl-lib,
+;;     so rejected loudly) and a `define-compiler-macro'; `hash-table-keys'
+;;     depends on another alexandria function (`maphash-keys').  All out.
 ;; The covered definitions are the in-scope slice; the rejects above are the
-;; documented frontier (named-block non-local exit, multiple values).
+;; documented frontier (multiple-value-call, cross-definition deps, and the
+;; single-value-context `values' leak).
 
 ;;; Code:
 
@@ -120,6 +122,34 @@
         (t
          nil)))")
 
+;; with-gensyms + xor: a named block + return-from + multiple `values',
+;; expanded via alexandria's own gensym macro.  The shared uninterned block
+;; name round-trips through SBCL's #N=/#N# printer.  Both the primary and the
+;; secondary value are checked (the probe wraps xor in multiple-value-list).
+(defconst ldb-cl-alex--xor "\
+(defmacro with-gensyms (names &body forms)
+  `(let ,(mapcar (lambda (name)
+                   (multiple-value-bind (symbol string)
+                       (etypecase name
+                         (symbol (values name (symbol-name name)))
+                         ((cons symbol (cons string-designator null))
+                          (values (first name) (string (second name)))))
+                     `(,symbol (gensym ,string))))
+                 names)
+     ,@forms))
+(defmacro xor (&rest datums)
+  (with-gensyms (xor tmp true)
+    `(let (,tmp ,true)
+       (declare (ignorable ,tmp))
+       (block ,xor
+         ,@(mapcar (lambda (datum)
+                     `(if (setf ,tmp ,datum)
+                          (if ,true
+                              (return-from ,xor (values nil nil))
+                              (setf ,true ,tmp))))
+                   datums)
+         (return-from ,xor (values ,true t))))))")
+
 (defconst ldb-cl-alex--if-let "\
 (defmacro if-let (bindings &body (then-form &optional else-form))
   \"Bind BINDINGS, run THEN-FORM if all are true else ELSE-FORM.\"
@@ -188,6 +218,17 @@
 
 (ldb-cl-alex-difftest ldb-cl-alex/proper-list-p-atom
   ldb-cl-alex--proper-list-p "(proper-list-p 5)")
+
+;; xor read through multiple-value-list -> both primary and secondary value
+;; match SBCL (one-true, two-true, none-true).
+(ldb-cl-alex-difftest ldb-cl-alex/xor-one-true
+  ldb-cl-alex--xor "(multiple-value-list (xor nil 5 nil))")
+
+(ldb-cl-alex-difftest ldb-cl-alex/xor-two-true
+  ldb-cl-alex--xor "(multiple-value-list (xor 1 2))")
+
+(ldb-cl-alex-difftest ldb-cl-alex/xor-none-true
+  ldb-cl-alex--xor "(multiple-value-list (xor nil nil))")
 
 ;;;; --- macros (pre-expanded) ------------------------------------------------
 

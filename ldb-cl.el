@@ -114,8 +114,8 @@ Everything else (Lisp-2 symbols, keywords, t/nil, #') reads natively."
     (char-code . identity) (code-char . identity)
     (case . cl-case) (typecase . cl-typecase) (ecase . cl-ecase)
     (etypecase . cl-etypecase) (ccase . cl-ccase)
-    (values . cl-values) (multiple-value-list . cl-multiple-value-list)
-    (multiple-value-call . cl-multiple-value-call) (nth-value . cl-nth-value)
+    (values . cl-values) (values-list . cl-values-list)
+    (multiple-value-list . cl-multiple-value-list) (nth-value . cl-nth-value)
     (floor . cl-floor) (ceiling . cl-ceiling) (truncate . cl-truncate)
     (round . cl-round) (rem . cl-rem)
     (call-next-method . cl-call-next-method) (next-method-p . cl-next-method-p))
@@ -142,7 +142,7 @@ Unmapped types pass through; CL-specific conditions may not be caught.")
 (defconst ldb-cl--reject-heads
   '(define-condition handler-bind restart-case restart-bind
     defmacro macrolet symbol-macrolet define-symbol-macro define-compiler-macro
-    multiple-value-setq
+    multiple-value-setq multiple-value-call multiple-value-prog1
     in-package defpackage
     formatter print princ prin1 write write-line write-string write-char
     read read-line read-char read-from-string

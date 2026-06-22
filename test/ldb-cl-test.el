@@ -286,5 +286,27 @@ and per-clause vars collapse onto one condition-case var (let-rebind)."
   (should (= 300 (ldb-cl-test--eval
                   "(do ((i 0 (1+ i))) (nil) (when (= i 3) (return (* i 100))))"))))
 
+(ert-deftest ldb-cl-test-block-return-from-golden ()
+  "Named block/return-from -> cl-block/cl-return-from; names round-trip."
+  (should (equal '(cl-block found
+                    (dolist (x lst) (when (cl-evenp x) (cl-return-from found x)))
+                    nil)
+                 (ldb-cl-translate-form
+                  (ldb-cl-read-from-string
+                   "(block found (dolist (x lst) (when (evenp x) (return-from found x))) nil)")))))
+
+(ert-deftest ldb-cl-test-block-return-from-eval ()
+  "Named block early exit runs; normal fall-through and nested exit too."
+  (should (= 4 (ldb-cl-test--eval
+                "(block found (dolist (x (list 1 3 4 5)) (when (evenp x) (return-from found x))) nil)")))
+  (should (= 3 (ldb-cl-test--eval "(block b (+ 1 2))")))
+  (should (= 42 (ldb-cl-test--eval
+                 "(block outer (block inner (return-from outer 42)) 99)"))))
+
+(ert-deftest ldb-cl-test-reject-multiple-value-call ()
+  "multiple-value-call is rejected loudly (Emacs cl-lib cannot splice values)."
+  (should-error (ldb-cl-translate-string "(multiple-value-call #'+ (values 1 2))")
+                :type 'ldb-cl-unsupported-form-error))
+
 (provide 'ldb-cl-test)
 ;;; ldb-cl-test.el ends here
