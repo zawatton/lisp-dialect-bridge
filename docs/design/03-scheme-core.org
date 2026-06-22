@@ -41,8 +41,8 @@ support — the GOFAI classic, the Scheme twin of the CL PAIP validation.
 =(deriv '(* (* x y) (+ x 3)) 'x)= and friends build and simplify symbolic
 expressions byte-for-byte like Guile.  This confirms the core ingests
 self-contained real Scheme (recursion, higher-order, symbolic list code)
-today; the frontier stays at continuations, hygienic macros and multiple
-values.
+today; the frontier stays at continuations and multiple values
+(hygienic macros are handled by Guile pre-expansion, below).
 
 Quasiquote increment (2026-06-22).  Scheme =`(a ,b ,@c)= →
 =`(a ,b ,@c)= (Elisp backquote).  The reader (Emacs =read=) already
@@ -56,6 +56,26 @@ quasiquote are rejected loudly.  Validated differentially against Guile
 (=make schemediff= 28/28): =`(a ,b c)=, splice =`(start ,@xs end)=,
 computed =`(square ,(* x x))= and the real deriv-style constructor
 =(define (make-sum a b) `(+ ,a ,b))= → =(+ x 3)= all agree.
+
+=define-syntax= via Guile pre-expansion (2026-06-22).  Hygienic macros
+(=ldb-scheme-macro.el=) — the Scheme analogue of the CL/SBCL path, but
+harder: Guile's =macroexpand= lowers all the way to Tree-IL, /not/
+readable Scheme.  The key is =tree-il->scheme=, which reconstructs
+readable Scheme that stays in the subset (it keeps high-level forms like
+=let= / =cond= / =and= / =define= and only renames identifiers where
+hygiene requires it).  So =(swap! tmp other)= → =(let ((tmp-1 tmp)) (set!
+tmp other) (set! other tmp-1))= — Guile renames the macro's =tmp= to
+avoid capturing the caller's =tmp=, and the rename round-trips as an
+ordinary symbol.  The walker evaluates the =define-syntax= / =define=
+forms, drops =define-syntax= / module forms, and emits each remaining
+form via =tree-il->scheme (macroexpand FORM)=; the result feeds the
+normal translator.  Public entries: =ldb-scheme-macro-expand-string=,
+=ldb-scheme-translate-string-expanding= / =-file-expanding=.  Gated on
+Guile on =PATH=.  Validated differentially (=make schemediff= 39/39):
+=swap!= (incl. an end-to-end /hygiene-capture/ case =(swap! tmp y)=),
+=my-when= / =my-unless=, an ellipsis =my-list=, a =while= macro
+(→ named-let + =when=), =inc!= in a loop, and a macro that /generates a
+define= — all agree with Guile running the macro program natively.
 
 * Why Scheme is the harder target (vs CL near-identity)
 
@@ -122,12 +142,15 @@ could special-case tail-self-calls in =named-let= into =while=.)
 ** L-SCM4. Subset, reject loudly (mirrors CL invariant 4)
 
 Continuations (=call/cc=, =call-with-current-continuation=,
-=dynamic-wind=), hygienic macros (=define-syntax=/=syntax-rules= — the
-Scheme analogue of CL macros; a later increment can pre-expand via Guile,
-mirroring the SBCL path), multiple values (=values=/=call-with-values= —
-same cl-lib limit as CL), full numeric tower (rationals/complex), vectors
-=#(…)=, and ports/IO beyond =display=/=newline= are OUT and signal
-=ldb-scheme-unsupported-form-error=.
+=dynamic-wind=), multiple values (=values=/=call-with-values= — same
+cl-lib limit as CL), full numeric tower (rationals/complex), vectors
+=#(…)=, and ports/IO beyond =display=/=newline= are OUT of the core
+translator and signal =ldb-scheme-unsupported-form-error=.  Hygienic
+macros (=define-syntax=/=syntax-rules=) are NOT rejected — they are
+handled out-of-band by Guile pre-expansion (=ldb-scheme-macro.el=, the
+SBCL-path analogue), so =ldb-scheme-translate-string-expanding= accepts
+them; the bare =ldb-scheme-translate-string= still rejects a raw
+=define-syntax= (no Guile in the loop).
 
 * Scope — IN (Scheme core v1)
 

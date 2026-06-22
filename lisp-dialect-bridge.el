@@ -40,6 +40,7 @@
 (require 'ldb-cl)
 (require 'ldb-cl-macro)
 (require 'ldb-scheme-cvt)
+(require 'ldb-scheme-macro)
 
 (provide 'lisp-dialect-bridge)
 ;;; lisp-dialect-bridge.el ends here
