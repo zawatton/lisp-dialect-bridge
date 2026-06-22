@@ -110,6 +110,7 @@ section "IR design".
 | 4d    | CL CLOS (defclass → eieio, defmethod/defgeneric → cl-generic)        | *SHIPPED*     |
 | 4d'   | CL conditions (handler-case → condition-case, partial)              | *SHIPPED*     |
 | 4e    | CL macros via SBCL selective pre-expand (=ldb-cl-macro.el=)          | *SHIPPED*     |
+| 4f    | CL =do= / =do*= iteration → =cl-do= / =cl-do*=                       | *SHIPPED*     |
 | 5     | Nix expression → Elisp IR (so anvil-pkg can ingest nixpkgs natively)| research      |
 | 6+    | Clojure subset (JVM-bound, very long term)                          | not promised  |
 
@@ -130,11 +131,11 @@ macros.  Correctness is gated by the same SBCL differential discipline.
 
 This pipeline is validated on a *real CL library* — verbatim definitions
 from =alexandria= (=test/ldb-cl-alexandria-test.el=): the functions
-=ensure-list=, =flatten=, =iota=, =clamp= and the binding macros
-=if-let= / =when-let= / =when-let*= translate and run identically to
-SBCL.  The documented frontier (rejected loudly): =do= loops, non-local
-exit (=block= / =return-from=) and multiple values.  =make difftest=
-32/32.
+=ensure-list=, =flatten=, =iota=, =clamp=, =proper-list-p= (a =do= loop)
+and the binding macros =if-let= / =when-let= / =when-let*= translate and
+run identically to SBCL.  The documented frontier (rejected loudly):
+named-block non-local exit (=block= / =return-from=) and multiple values.
+=make difftest= 38/38.
 
 * Repository layout (planned)
 

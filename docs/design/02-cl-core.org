@@ -144,15 +144,29 @@ definitions agree with SBCL: functions =ensure-list=, =flatten=
 ... repeat ... collect=) and =clamp=; and the binding macros =if-let=,
 =when-let=, =when-let*= (whose expanders use destructuring =&body=,
 =labels= and backquote — all run in SBCL, the bridge only sees the
-expansion).  =make difftest= 32/32.  The /frontier/ was probed and
-rejects loudly (never silent): =proper-list-p= uses the =do= loop
-(unmapped); =xor= expands via alexandria's own =with-gensyms= to =block=
-/ =return-from= / =values= (non-local exit + multiple values
-unsupported); =curry= / =compose= use =multiple-value-call= + a
+expansion).  The /frontier/ was probed and
+rejects loudly (never silent): =xor= expands via alexandria's own
+=with-gensyms= to a NAMED =block= / =return-from= + multiple =values=
+(unsupported); =curry= / =compose= use =multiple-value-call= + a
 =define-compiler-macro=; =hash-table-keys= depends on another alexandria
 function.  So the bridge ingests the self-contained utility/binding slice
-of a real library today, with a clear documented boundary at =do= loops,
+of a real library today, with a clear documented boundary at named-block
 non-local exit and multiple values.
+
+A 4f increment adds the =do= / =do*= iteration macros → =cl-do= /
+=cl-do*= (=ldb-cl--do-to-ir= + =do= IR tag + emitter).  The per-clause
+=(VAR INIT STEP)= init/step expressions, the end-test, its result forms
+and the body are translated; loop variables stay verbatim; =do*= maps to
+the sequential =cl-do*=.  =return= / =return-from= were already in the
+remap (=cl-return= / =cl-return-from=) and cl-do establishes the implicit
+=nil= block, so early exit works.  This pulled alexandria's
+=proper-list-p= (a Floyd cycle check written as a =do= with =return=)
+into the covered slice — it now agrees with SBCL on proper, dotted and
+atom inputs.  Hermetic tests cover the golden =cl-do= shape and runtime
+(=do= accumulate, =do*= sequential binding, =do= +=return=); differential
+tests cover the same plus =proper-list-p=.  =make test= 46/46,
+=make difftest= 38/38, byte-compile clean.  Named =block= / =return-from=
+to a user block and multiple =values= remain the frontier.
 
 Builds on the Phase 0 IR contract (=01-overview.org= L1/L2).  Re-uses
 the documented general-code IR tags; this doc only *adds* tags, never
@@ -203,6 +217,7 @@ means Scheme still benefits later.
 | =(format nil/t CTRL ...)=                  | =(format …)= / =(princ (format …))= | ~a~s~d~f~x~%~~ ; params rejected (4b)|
 | backquote / unquote / splice               | same (Elisp shares the reader)      | unquoted exprs translated; nested rejected (4b)|
 | =(loop ...)=                               | =(cl-loop ...)=                     | keyword DSL kept; list-valued clause exprs translated (4c)|
+| =(do/do* (BINDS) (END RES) BODY)=          | =(cl-do/cl-do* ...)=               | init/step/end/result/body translated; vars verbatim; =return=→=cl-return= (4f)|
 | =(multiple-value-bind (vs) v body)=        | =(cl-multiple-value-bind ...)=      | + values/floor/truncate/...→cl-* (4c)|
 | =(defclass NAME (SUP) (SLOTS) OPT)=        | eieio =defclass=                    | :initform translated, opts kept (4d)|
 | =(defmethod NAME [Q] ARGS BODY)=           | =cl-defmethod=                      | specializers + qualifier kept (4d)|
@@ -245,6 +260,7 @@ Added this phase (allowed — new =:tag= values only):
 | =cond=    | =(:clauses ((TEST-NODE BODY-NODE…) …))=                   |
 | =special= | =(:head SYM :args (NODE…))=  head-passthrough special form |
 | =bind=    | =(:head SYM :spec (VAR ITER…) :body (NODE…))= dolist/dotimes|
+| =do=      | =(:star BOOL :bindings ((VAR INIT? STEP?)…) :end-test NODE :results (NODE…) :body (NODE…))= do/do*|
 | =locals=  | =(:head SYM :defs ((NAME LL (BODY…))…) :body (NODE…))= labels/flet|
 
 =let= form gains =:star BOOL=.  =lambda= form gains =:cl BOOL=.

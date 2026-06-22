@@ -142,7 +142,7 @@ Unmapped types pass through; CL-specific conditions may not be caught.")
 (defconst ldb-cl--reject-heads
   '(define-condition handler-bind restart-case restart-bind
     defmacro macrolet symbol-macrolet define-symbol-macro define-compiler-macro
-    do do* multiple-value-setq
+    multiple-value-setq
     in-package defpackage
     formatter print princ prin1 write write-line write-string write-char
     read read-line read-char read-from-string
@@ -243,6 +243,7 @@ Returns nil for a `declare' form (callers drop it from bodies)."
      ((eq head 'defgeneric) (ldb-cl--defgeneric-to-ir form))
      ((eq head 'handler-case) (ldb-cl--handler-case-to-ir form))
      ((memq head '(dolist dotimes)) (ldb-cl--bind-to-ir form))
+     ((memq head '(do do*)) (ldb-cl--do-to-ir form))
      ((memq head '(labels flet)) (ldb-cl--locals-to-ir form))
      (t
       (ldb-ir-make 'call
@@ -318,6 +319,41 @@ Returns nil for a `declare' form (callers drop it from bodies)."
                              :iter (ldb-cl-form-to-ir (nth 1 spec))
                              :result (when (nth 2 spec) (ldb-cl-form-to-ir (nth 2 spec)))
                              :body (ldb-cl--map-forms (cddr form)))
+                 :origin 'cl)))
+
+(defun ldb-cl--do-binding (b)
+  "Translate one `do'/`do*' binding B: VAR | (VAR) | (VAR INIT) | (VAR INIT STEP)."
+  (cond
+   ((symbolp b) (list b))
+   ((and (consp b) (symbolp (car b)))
+    (let ((var (car b)) (rest (cdr b)))
+      (cond
+       ((null rest) (list var))
+       ((null (cdr rest)) (list var (ldb-cl-form-to-ir (car rest))))
+       (t (list var
+                (ldb-cl-form-to-ir (car rest))
+                (ldb-cl-form-to-ir (cadr rest)))))))
+   (t (signal 'ldb-cl-unsupported-form-error (list "bad do binding" b)))))
+
+(defun ldb-cl--do-to-ir (form)
+  "Translate CL (do/do* BINDINGS (END-TEST RESULT...) BODY...) to cl-do/cl-do*.
+The binding INIT/STEP expressions, the END-TEST, RESULT forms and BODY are
+translated; loop variables stay verbatim.  `return'/`return-from' inside the
+body map via the symbol table (cl-do establishes the implicit nil block)."
+  (let* ((bindings (nth 1 form))
+         (end-clause (nth 2 form))
+         (body (nthcdr 3 form)))
+    (unless (listp bindings)
+      (signal 'ldb-cl-unsupported-form-error (list "do bindings must be a list" form)))
+    (unless (listp end-clause)
+      (signal 'ldb-cl-unsupported-form-error
+              (list "do end-test clause must be a list" form)))
+    (ldb-ir-make 'do
+                 :form (list :star (eq (car form) 'do*)
+                             :bindings (mapcar #'ldb-cl--do-binding bindings)
+                             :end-test (ldb-cl-form-to-ir (car end-clause))
+                             :results (ldb-cl--map-forms (cdr end-clause))
+                             :body (ldb-cl--map-forms body))
                  :origin 'cl)))
 
 (defun ldb-cl--bq-walk (tmpl)

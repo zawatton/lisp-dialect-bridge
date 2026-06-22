@@ -264,5 +264,27 @@ and per-clause vars collapse onto one condition-case var (let-rebind)."
   (should-error (ldb-cl-translate-string "(destructuring-bind (a b) lst (+ a b))")
                 :type 'ldb-cl-unsupported-form-error))
 
+(ert-deftest ldb-cl-test-do-golden ()
+  "do -> cl-do with translated init/step/end/result; vars verbatim."
+  (should (equal '(cl-do ((i 0 (1+ i)) (acc 0 (+ acc i))) ((= i 5) acc))
+                 (ldb-cl-translate-form
+                  (ldb-cl-read-from-string
+                   "(do ((i 0 (1+ i)) (acc 0 (+ acc i))) ((= i 5) acc))")))))
+
+(ert-deftest ldb-cl-test-do-eval ()
+  "Translated do accumulates correctly at runtime."
+  (should (= 10 (ldb-cl-test--eval
+                 "(do ((i 0 (1+ i)) (acc 0 (+ acc i))) ((= i 5) acc))"))))
+
+(ert-deftest ldb-cl-test-do*-sequential-eval ()
+  "do* -> cl-do* with sequential binding (b sees a's stepped value)."
+  (should (= 40 (ldb-cl-test--eval
+                 "(do* ((a 1 (1+ a)) (b (* a 10) (* a 10))) ((> a 3) b))"))))
+
+(ert-deftest ldb-cl-test-do-return-eval ()
+  "return inside do exits the implicit nil block (via cl-return)."
+  (should (= 300 (ldb-cl-test--eval
+                  "(do ((i 0 (1+ i))) (nil) (when (= i 3) (return (* i 100))))"))))
+
 (provide 'ldb-cl-test)
 ;;; ldb-cl-test.el ends here

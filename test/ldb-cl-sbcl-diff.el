@@ -129,5 +129,17 @@ value is compared.  `skip-unless' is expanded inline per ERT rules."
   "(defun safe (x y) (handler-case (/ x y) (division-by-zero () -1)))"
   "(safe 10 2)")
 
+(ldb-cl-sbcl-diff-deftest ldb-cl-sbcl-diff/do-accumulate
+  ""
+  "(do ((i 0 (1+ i)) (acc 0 (+ acc i))) ((= i 5) acc))")
+
+(ldb-cl-sbcl-diff-deftest ldb-cl-sbcl-diff/do-star-sequential
+  ""
+  "(do* ((a 1 (1+ a)) (b (* a 10) (* a 10))) ((> a 3) b))")
+
+(ldb-cl-sbcl-diff-deftest ldb-cl-sbcl-diff/do-return
+  ""
+  "(do ((i 0 (1+ i))) (nil) (when (= i 3) (return (* i 100))))")
+
 (provide 'ldb-cl-sbcl-diff)
 ;;; ldb-cl-sbcl-diff.el ends here

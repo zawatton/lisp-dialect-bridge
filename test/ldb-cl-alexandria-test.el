@@ -22,18 +22,20 @@
 ;;
 ;; Gated on SBCL (`skip-unless'); folded into `make difftest'.
 ;;
+;; `proper-list-p' (a `do' loop with `return') is covered since the do-loop
+;; increment.
+;;
 ;; Honest coverage boundary (probed against real alexandria, all REJECTED
 ;; *loudly* via `ldb-cl-unsupported-form-error' — never silently
 ;; mis-translated):
-;;   * `proper-list-p' uses the `do' loop macro — not yet mapped.
-;;   * `xor' expands (via alexandria's own `with-gensyms') to
-;;     `block' / `return-from' / `values' — non-local exit + multiple
-;;     values are unsupported.
+;;   * `xor' expands (via alexandria's own `with-gensyms') to `block' /
+;;     `return-from' a NAMED block — user blocks + multiple `values' are
+;;     unsupported (do/dotimes/loop implicit nil-block `return' IS covered).
 ;;   * `curry' / `compose' use `multiple-value-call' and a
 ;;     `define-compiler-macro'; `hash-table-keys' depends on another
 ;;     alexandria function (`maphash-keys').  All out for v1.
-;; The seven covered definitions are the in-scope slice; the rejects above
-;; are the documented frontier (do-loop, non-local exit, multiple values).
+;; The covered definitions are the in-scope slice; the rejects above are the
+;; documented frontier (named-block non-local exit, multiple values).
 
 ;;; Code:
 
@@ -102,6 +104,22 @@
           max
           number)))")
 
+(defconst ldb-cl-alex--proper-list-p "\
+(defun proper-list-p (object)
+  \"Returns true if OBJECT is a proper list.\"
+  (cond ((not object)
+         t)
+        ((consp object)
+         (do ((fast object (cddr fast))
+              (slow (cons (car object) (cdr object)) (cdr slow)))
+             (nil)
+           (unless (and (listp fast) (consp (cdr fast)))
+             (return (and (listp fast) (not (cdr fast)))))
+           (when (eq fast slow)
+             (return nil))))
+        (t
+         nil)))")
+
 (defconst ldb-cl-alex--if-let "\
 (defmacro if-let (bindings &body (then-form &optional else-form))
   \"Bind BINDINGS, run THEN-FORM if all are true else ELSE-FORM.\"
@@ -161,6 +179,15 @@
 
 (ldb-cl-alex-difftest ldb-cl-alex/clamp-mid
   ldb-cl-alex--clamp "(clamp 12 0 10)")
+
+(ldb-cl-alex-difftest ldb-cl-alex/proper-list-p-true
+  ldb-cl-alex--proper-list-p "(proper-list-p (list 1 2 3))")
+
+(ldb-cl-alex-difftest ldb-cl-alex/proper-list-p-dotted
+  ldb-cl-alex--proper-list-p "(proper-list-p (cons 1 2))")
+
+(ldb-cl-alex-difftest ldb-cl-alex/proper-list-p-atom
+  ldb-cl-alex--proper-list-p "(proper-list-p 5)")
 
 ;;;; --- macros (pre-expanded) ------------------------------------------------
 
