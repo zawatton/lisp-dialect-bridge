@@ -113,6 +113,12 @@ section "IR design".
 | 5     | Nix expression → Elisp IR (so anvil-pkg can ingest nixpkgs natively)| research      |
 | 6+    | Clojure subset (JVM-bound, very long term)                          | not promised  |
 
+The CL-core translator (4a–4d') is validated against *SBCL as a
+ground-truth oracle*: =make difftest= (=test/ldb-cl-sbcl-diff.el=) runs
+each program both in SBCL and through the bridge and asserts the printed
+results agree (10/10).  =make test= stays hermetic; the differential
+suite skips cleanly when =sbcl= is not on =PATH=.
+
 * Repository layout (planned)
 
 #+begin_src text

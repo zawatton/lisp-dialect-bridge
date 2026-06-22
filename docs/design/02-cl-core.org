@@ -87,6 +87,27 @@ deliberately partial.  Validated on a =handler-case= safe-divide that
 catches division by zero as =arith-error=.  ERT 42/42, byte-compile
 clean.
 
+SBCL differential validation (2026-06-22).  An external SBCL was
+installed as a *ground-truth oracle* and the eyeball/PAIP-style checks
+were upgraded to a mechanical differential test
+(=test/ldb-cl-sbcl-diff.el=, =make difftest=).  Each case runs one real
+CL program two ways — SBCL =--script= on the original source vs the
+bridge translating the same source to Elisp and this Emacs running it —
+and asserts the two printed values agree after normalisation (trim +
+downcase, which folds away CL's upcase and =T=/=NIL= vs =t=/=nil=).  Ten
+cases span arith/=let=, recursion/=cond=, =loop= (=sum=/=collect=),
+=reduce= with =:initial-value=, =case=, =defstruct=, CLOS
+(=defclass=/=defmethod=/=make-instance= with =:initarg=), and
+=handler-case= (caught + normal).  All 10 agree with SBCL.  The suite
+skips cleanly when =sbcl= is absent (=skip-unless=), so =make test=
+stays hermetic; =make difftest= is the oracle-backed gate.
+
+The first differential run surfaced a real hazard (see "Known hazards"
+below): a CL class literally named =point= translated to an eieio
+=defclass= whose backward-compatibility constructor function =point=
+*shadowed Emacs's built-in =(point)=*, crashing unrelated host code.
+This is a translation hazard, not a test artefact — recorded below.
+
 Builds on the Phase 0 IR contract (=01-overview.org= L1/L2).  Re-uses
 the documented general-code IR tags; this doc only *adds* tags, never
 new top-level IR keys (per CLAUDE.md invariant 2).
@@ -235,6 +256,25 @@ Behavioural tests =eval= the emitted Elisp (with cl-lib loaded) and
 assert runtime results — this is the analogue of the closed-loop
 "measure the live function" discipline: we prove the *translation
 runs*, not just that it pretty-prints.
+
+* Known hazards
+
+- HZ1. *Class / accessor names that shadow Emacs core functions.*  A CL
+  =(defclass point ...)= translates to an eieio =defclass=.  With
+  =eieio-backward-compatibility= (the Emacs default) eieio defines a
+  constructor *function* named after the class, so =point= is fset to a
+  constructor and the built-in =(point)= is clobbered — later host code
+  that calls =(point)= for a buffer position then receives an eieio
+  object and errors far from the translation site.  Discovered by the
+  SBCL differential suite (the CLOS case crashed ERT's own message-log
+  truncation).  Same risk for any class / accessor / =defstruct=
+  constructor whose name collides with a core function (=point=, =car=
+  via accessor, etc.).  Mitigations to weigh in a later increment:
+  (a) emit =defclass= with =eieio-backward-compatibility= locally
+  disabled or with no implicit constructor; (b) warn (=:warnings=) when
+  a translated definition name shadows an =fboundp= core symbol;
+  (c) leave it as a documented caller responsibility.  For now: loud
+  documentation + test classes avoid core names.
 
 * Open questions
 
