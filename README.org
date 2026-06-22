@@ -165,6 +165,36 @@ Newton's-method =sqrt=, higher-order =sum= / =accumulate=, tree-recursive
 hygiene, =while=, ellipsis) via Guile pre-expansion.  =make schemediff=
 39/39.
 
+* MCP integration (optional)
+
+=ldb-mcp.el= is an *optional* adapter that exposes the translators as
+anvil MCP tools on the =emacs-eval= server, so an agent (Claude Code) can
+call them directly instead of shelling out to =emacs --batch=.  It is the
+only file that requires anvil; the core translators stay anvil-free
+(invariant 5), and it is *not* in the =make compile= SRC list (it loads
+only inside a running anvil daemon).
+
+Tools:
+
+| Tool                    | Purpose                                                |
+|-------------------------+--------------------------------------------------------|
+| =ldb-translate=         | dialect + source/path [+ expand + pretty] → Elisp text |
+| =ldb-translate-to-file= | dialect + out + source/path [+ expand] → write a =.el= |
+| =ldb-capabilities=      | (no args) dialects / oracle presence / live rejects    |
+
+=expand="1"= pre-expands macros first (=defmacro= via SBCL for CL,
+=define-syntax= via Guile for Scheme).  Enable inside the daemon:
+
+#+begin_src elisp
+(add-to-list 'load-path "/path/to/lisp-dialect-bridge")
+(require 'lisp-dialect-bridge)
+(load "/path/to/lisp-dialect-bridge/ldb-mcp.el")
+(ldb-mcp-enable)
+#+end_src
+
+A client picks the tools up on its next =tools/list= fetch (a fresh
+session); add the snippet to the daemon init to persist across restarts.
+
 * Repository layout (planned)
 
 #+begin_src text
