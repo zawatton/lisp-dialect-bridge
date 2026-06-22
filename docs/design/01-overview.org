@@ -106,7 +106,7 @@ The =record= tag is the load-bearing one for Phase 1 — Guix
 =quasiquote= / =receive= / =delay= / =force= / =call/cc=
 (rejected) / etc.
 
-** L3. Macro hygiene strategy = pre-expand source-side (Phase 1-2)
+** L3. Macro hygiene strategy = pre-expand source-side (Scheme 1-2; CL 4e)
 
 Macros are the single hardest correctness issue.  Phase 1 sidesteps
 it by /not translating macros/ — we accept only forms that are
@@ -122,6 +122,45 @@ bridge's translator a pure tree-mapper.
 Phase 4+ may implement hygienic =syntax-rules= directly in Elisp on
 top of NeLisp's IR.  Decision deferred until we have data on what
 real-world macros need to translate.
+
+*Phase 4e decision (CL macros, 2026-06-22): SELECTIVE pre-expansion via
+an external SBCL.*  This is the CL analogue of the external-Scheme plan
+above, made concrete now that SBCL is installed as an oracle (see
+=02-cl-core.org=).  Key choices:
+
+- *Selective, not whole-program.*  We do NOT run =macroexpand-all=.
+  Full expansion explodes /standard/ CL macros (=when=, =cond=, =loop=,
+  =defun=, =case=, =dolist=, ...) into implementation primitives
+  (=block= / =tagbody= / =go= / =sb-impl::%defun=) that the translator
+  does not cover.  Instead an SBCL code-walker expands only
+  /user-defined/ macros — operators whose =macro-function= is non-nil
+  AND whose =symbol-package= is /not/ =COMMON-LISP= — one
+  =macroexpand-1= step at a time, recursing into the result.  Standard
+  CL macros are left intact for the existing 4a–4d' handlers.  Net: a
+  user macro use becomes concrete core syntax; =when=/=loop=/=defun=
+  stay as themselves.
+- *=defmacro= forms are evaluated then dropped.*  The walker needs the
+  macro defined to expand its uses, so each =defmacro= (plus =defun= /
+  =defvar= / =defstruct= / =defclass= that an expander might reference)
+  is =eval='d into SBCL first.  =defmacro= forms themselves are dropped
+  from the output — Elisp never sees them; only their expansions
+  survive.
+- *Case round-trips via =*print-case* :downcase=.*  CL upcases symbols
+  internally and SBCL would print =DEFUN= / =FACT=, which Emacs =read=
+  would intern as distinct uppercase symbols the translator does not
+  dispatch on.  The pre-expander prints with =*print-case* :downcase=
+  (and =*print-length*= / =*print-level*= nil, =*print-circle* t=) so
+  the emitted CL text is lowercase and feeds the normal reader.
+- *Hygiene = faithful to the oracle, not independently guaranteed.*  CL
+  macros are unhygienic by language design.  We reproduce /exactly/
+  SBCL's expansion, so the translated program has the same capture
+  behaviour the CL program would — the differential test (run the same
+  program in SBCL and through the bridge) is the correctness gate.
+- *Gating + out of scope (v1).*  Pre-expansion is gated on SBCL on
+  =PATH=; without it =defmacro= stays rejected loudly (unchanged).  Out
+  for v1: =macrolet= / =symbol-macrolet= (local macros — the walker uses
+  only the global =macro-function=), compiler-macros, read-macros beyond
+  the reader's =#\= / =#'= / =#|...|#= handling.
 
 ** L4. Public Elisp surface = =ldb-= prefix
 
