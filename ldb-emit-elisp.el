@@ -193,6 +193,15 @@ recipe — the user must add it after import.")
           (ldb-emit-elisp--bq-template (cdr tmpl))))
    (t tmpl)))
 
+(defun ldb-emit-elisp--clos-slot (slot)
+  "Rebuild a defclass SLOT, emitting Elisp for an IR-node :initform value."
+  (if (symbolp slot) slot
+    (cons (car slot)
+          (mapcar (lambda (v) (if (and (consp v) (eq (car v) :tag))
+                                  (ldb-emit-elisp-node v)
+                                v))
+                  (cdr slot)))))
+
 (defun ldb-emit-elisp-node (node)
   "Emit Elisp source (as data) from a general IR NODE."
   (pcase (ldb-ir-tag node)
@@ -263,6 +272,21 @@ recipe — the user must add it after import.")
     ('backquote
      (list ldb-ir-backquote-symbol
            (ldb-emit-elisp--bq-template (plist-get (ldb-ir-form node) :template))))
+    ('defclass
+     (let ((f (ldb-ir-form node)))
+       (append (list 'defclass (plist-get f :name) (plist-get f :supers)
+                     (mapcar #'ldb-emit-elisp--clos-slot (plist-get f :slots)))
+               (plist-get f :options))))
+    ('defmethod
+     (let ((f (ldb-ir-form node)))
+       (append (list 'cl-defmethod (plist-get f :name))
+               (and (plist-get f :qualifier) (list (plist-get f :qualifier)))
+               (list (plist-get f :arglist))
+               (mapcar #'ldb-emit-elisp-node (plist-get f :body)))))
+    ('defgeneric
+     (let ((f (ldb-ir-form node)))
+       (append (list 'cl-defgeneric (plist-get f :name) (plist-get f :args))
+               (plist-get f :options))))
     ('loop
      (cons 'cl-loop
            (mapcar (lambda (el)

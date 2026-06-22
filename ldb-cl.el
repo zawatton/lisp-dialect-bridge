@@ -117,7 +117,8 @@ Everything else (Lisp-2 symbols, keywords, t/nil, #') reads natively."
     (values . cl-values) (multiple-value-list . cl-multiple-value-list)
     (multiple-value-call . cl-multiple-value-call) (nth-value . cl-nth-value)
     (floor . cl-floor) (ceiling . cl-ceiling) (truncate . cl-truncate)
-    (round . cl-round) (rem . cl-rem))
+    (round . cl-round) (rem . cl-rem)
+    (call-next-method . cl-call-next-method) (next-method-p . cl-next-method-p))
   "Common Lisp symbol -> Elisp/cl-lib symbol for function-position heads.")
 
 (defun ldb-cl--remap-head (sym)
@@ -125,8 +126,7 @@ Everything else (Lisp-2 symbols, keywords, t/nil, #') reads natively."
   (or (cdr (assq sym ldb-cl--remap)) sym))
 
 (defconst ldb-cl--reject-heads
-  '(defclass defmethod defgeneric
-    define-condition handler-case handler-bind restart-case restart-bind
+  '(define-condition handler-case handler-bind restart-case restart-bind
     defmacro macrolet symbol-macrolet define-symbol-macro define-compiler-macro
     do do* multiple-value-setq
     in-package defpackage
@@ -224,6 +224,9 @@ Returns nil for a `declare' form (callers drop it from bodies)."
      ((eq head 'format) (ldb-cl--format-to-ir form))
      ((eq head 'loop) (ldb-cl--loop-to-ir form))
      ((eq head 'multiple-value-bind) (ldb-cl--mvb-to-ir form))
+     ((eq head 'defclass) (ldb-cl--defclass-to-ir form))
+     ((eq head 'defmethod) (ldb-cl--defmethod-to-ir form))
+     ((eq head 'defgeneric) (ldb-cl--defgeneric-to-ir form))
      ((memq head '(dolist dotimes)) (ldb-cl--bind-to-ir form))
      ((memq head '(labels flet)) (ldb-cl--locals-to-ir form))
      (t
@@ -364,6 +367,47 @@ Signals on parameterized or unsupported directives (reject loudly)."
                              :control (ldb-cl--format-control ctrl)
                              :args (ldb-cl--map-forms (cdddr form)))
                  :origin 'cl)))
+
+(defun ldb-cl--clos-slot-to-ir (slot)
+  "Translate a defclass SLOT.  Only the :initform value is code (-> IR);
+the slot name and all other options (:initarg/:accessor/:type/...) are kept."
+  (if (symbolp slot) slot
+    (let ((name (car slot)) (opts (cdr slot)) (out '()))
+      (while opts
+        (let ((k (car opts)) (v (cadr opts)))
+          (push k out)
+          (push (if (eq k :initform) (ldb-cl-form-to-ir v) v) out)
+          (setq opts (cddr opts))))
+      (cons name (nreverse out)))))
+
+(defun ldb-cl--defclass-to-ir (form)
+  "Translate (defclass NAME (SUPERS) (SLOTS) OPTIONS...) to an eieio defclass."
+  (ldb-ir-make 'defclass
+               :form (list :name (nth 1 form)
+                           :supers (nth 2 form)
+                           :slots (mapcar #'ldb-cl--clos-slot-to-ir (nth 3 form))
+                           :options (nthcdr 4 form))
+               :origin 'cl))
+
+(defun ldb-cl--defmethod-to-ir (form)
+  "Translate (defmethod NAME [QUALIFIER] ARGLIST BODY...) to cl-defmethod."
+  (let* ((name (nth 1 form))
+         (rest (cddr form))
+         (qualifier (and (not (listp (car rest))) (pop rest)))
+         (arglist (car rest))
+         (body (cdr rest)))
+    (ldb-ir-make 'defmethod
+                 :form (list :name name :qualifier qualifier :arglist arglist
+                             :body (ldb-cl--map-forms body))
+                 :origin 'cl)))
+
+(defun ldb-cl--defgeneric-to-ir (form)
+  "Translate (defgeneric NAME (ARGS) OPTIONS...) to cl-defgeneric.
+Options are kept verbatim (an embedded (:method ...) body is not translated)."
+  (ldb-ir-make 'defgeneric
+               :form (list :name (nth 1 form) :args (nth 2 form)
+                           :options (nthcdr 3 form))
+               :origin 'cl))
 
 (defun ldb-cl--loop-walk (clause)
   "Translate one CL loop CLAUSE element.

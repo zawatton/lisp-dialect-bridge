@@ -107,7 +107,8 @@ section "IR design".
 | 4a    | Common Lisp /core syntax/ → Elisp (defun/let/cond/labels/seq-fns)    | *SHIPPED*     |
 | 4b    | CL case / defstruct / sharp-quote / format / backquote               | *SHIPPED*     |
 | 4c    | CL loop → cl-loop / multiple-value-bind                              | *SHIPPED*     |
-| 4d    | CL CLOS (defclass/defmethod → eieio) / conditions                   | research      |
+| 4d    | CL CLOS (defclass → eieio, defmethod/defgeneric → cl-generic)        | *SHIPPED*     |
+| 4d'   | CL conditions (handler-case → condition-case)                       | research      |
 | 4e    | CL macros (gated on hygiene; external-CL pre-expand)                | research      |
 | 5     | Nix expression → Elisp IR (so anvil-pkg can ingest nixpkgs natively)| research      |
 | 6+    | Clojure subset (JVM-bound, very long term)                          | not promised  |

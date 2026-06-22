@@ -117,10 +117,32 @@
 
 ;;;; --- reject list ----------------------------------------------------------
 
-(ert-deftest ldb-cl-test-reject-defclass ()
-  "CLOS defclass signals."
-  (should-error (ldb-cl-translate-string "(defclass foo () ())")
-                :type 'ldb-cl-unsupported-form-error))
+(ert-deftest ldb-cl-test-defclass-golden ()
+  "defclass -> eieio defclass; :initform translated, other options kept."
+  (should (equal '(defclass point () ((x :initarg :x :initform 0 :accessor point-x)))
+                 (ldb-cl-translate-form
+                  (ldb-cl-read-from-string
+                   "(defclass point () ((x :initarg :x :initform 0 :accessor point-x)))")))))
+
+(ert-deftest ldb-cl-test-defmethod-golden ()
+  "defmethod -> cl-defmethod; specialized arglist kept, body translated."
+  (should (equal '(cl-defmethod area ((c circle)) (* 3 (radius c) (radius c)))
+                 (ldb-cl-translate-form
+                  (ldb-cl-read-from-string
+                   "(defmethod area ((c circle)) (* 3 (radius c) (radius c)))"))))
+  (should (equal '(cl-defgeneric area (shape))
+                 (ldb-cl-translate-form
+                  (ldb-cl-read-from-string "(defgeneric area (shape))")))))
+
+(ert-deftest ldb-cl-test-eval-clos ()
+  "A CLOS class + method translates and runs via eieio / cl-defmethod."
+  (require 'eieio)
+  (ldb-cl-test--eval
+   "(defclass ldb-cl-test-pt () ((x :initarg :x :initform 0 :accessor ldb-cl-test-pt-x) (y :initarg :y :initform 0 :accessor ldb-cl-test-pt-y)))")
+  (ldb-cl-test--eval
+   "(defmethod ldb-cl-test-norm ((p ldb-cl-test-pt)) (sqrt (+ (* (ldb-cl-test-pt-x p) (ldb-cl-test-pt-x p)) (* (ldb-cl-test-pt-y p) (ldb-cl-test-pt-y p)))))")
+  (should (= 5.0 (funcall 'ldb-cl-test-norm
+                          (make-instance 'ldb-cl-test-pt :x 3 :y 4)))))
 
 (ert-deftest ldb-cl-test-reject-defmacro ()
   "defmacro signals (macros gated on hygiene decision)."
