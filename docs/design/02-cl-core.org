@@ -15,6 +15,15 @@ clean.  Demonstrated end-to-end by translating + running a self-contained
 symbolic-expression evaluator (a genetic-programming "individual"
 evaluator) — CL source → Elisp → correct result.
 
+Validated against 7 classic self-contained CL-AI snippets (symbolic
+differentiation, PAIP variable-p, case-dispatch, GP tree-size, set
+union, dotimes/push range, format-greet): 6 PASS + 1 REJECT-by-design
+(format).  The first pass surfaced two gaps — CL =char= string-indexing
+and =case= (which was *silently mis-translated*, violating the
+reject-loudly invariant) — both closed in this increment
+(=char/schar→aref=, =case/typecase/ecase→cl-case=, =defconstant→defvar=,
+binding/clause forms moved to the loud reject list).
+
 Builds on the Phase 0 IR contract (=01-overview.org= L1/L2).  Re-uses
 the documented general-code IR tags; this doc only *adds* tags, never
 new top-level IR keys (per CLAUDE.md invariant 2).
@@ -56,6 +65,9 @@ means Scheme still benefits later.
 | =catch= =throw= =unwind-protect= =ignore-errors= | same                          | elisp-identical                |
 | seq fns =reduce/remove/remove-if/find/position/count/every/some/member/assoc/sort= | =cl-*= | cl-lib equivalents |
 | list fns =first/second/third/fourth/rest= | =car/cadr/caddr/cadddr/cdr=         |                                |
+| =case= =typecase= =ecase=                 | =cl-case= =cl-typecase= =cl-ecase= | clause keys preserved (4b)     |
+| =char= =schar= =svref= (seq ref)          | =aref=                              | char-code/code-char→identity (4b)|
+| =defconstant=                             | =defvar=                            | (4b)                           |
 
 Lambda-list handling: a CL λ-list needs =cl-defun=/=cl-function= iff it
 contains =&key=, =&aux=, or an =&optional=/=&rest= var with a default
@@ -72,8 +84,9 @@ CLOS (=defclass/defmethod/defgeneric=), =defstruct=, conditions
 (=values/multiple-value-bind=), packages
 (=in-package/defpackage=), I/O with divergent semantics
 (=format/print/princ/write/read=), =tagbody/go=, =eval-when=,
-quasiquote/backquote, =call/cc=-equivalents.  Each signals with the
-offending form — never silent.  These land in later increments
+quasiquote/backquote, =call/cc=-equivalents, binding/clause forms
+(=destructuring-bind/with-slots/with-accessors=).  Each signals with
+the offending form — never silent.  These land in later increments
 (macros gated on the L3 hygiene decision).
 
 Rationale: a narrow, *correct* core that runs real algorithms beats a

@@ -132,5 +132,26 @@
   (should-error (ldb-cl-translate-string "(loop for i from 1 to 3 collect i)")
                 :type 'ldb-cl-unsupported-form-error))
 
+(ert-deftest ldb-cl-test-eval-case ()
+  "CL case maps to cl-case with clause keys preserved."
+  (ldb-cl-test--eval
+   "(defun ldb-cl-test-kd (e) (case (first e) (+ 'sum) (* 'product) (otherwise 'other)))")
+  (should (eq 'sum (funcall 'ldb-cl-test-kd '(+ a b))))
+  (should (eq 'other (funcall 'ldb-cl-test-kd '(/ a b))))
+  (fmakunbound 'ldb-cl-test-kd))
+
+(ert-deftest ldb-cl-test-eval-char-aref ()
+  "CL char (string indexing) maps to aref."
+  (ldb-cl-test--eval
+   "(defun ldb-cl-test-vp (x) (and (symbolp x) (eql (char (symbol-name x) 0) #\\?)))")
+  (should (funcall 'ldb-cl-test-vp (intern "?foo")))
+  (should-not (funcall 'ldb-cl-test-vp 'foo))
+  (fmakunbound 'ldb-cl-test-vp))
+
+(ert-deftest ldb-cl-test-reject-destructuring-bind ()
+  "destructuring-bind (a binding form, not core) signals."
+  (should-error (ldb-cl-translate-string "(destructuring-bind (a b) lst (+ a b))")
+                :type 'ldb-cl-unsupported-form-error))
+
 (provide 'ldb-cl-test)
 ;;; ldb-cl-test.el ends here

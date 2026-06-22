@@ -109,7 +109,11 @@ Everything else (Lisp-2 symbols, keywords, t/nil, #') reads natively."
     (block . cl-block) (return-from . cl-return-from) (return . cl-return)
     (gensym . cl-gensym)
     (evenp . cl-evenp) (oddp . cl-oddp) (plusp . cl-plusp) (minusp . cl-minusp)
-    (char= . =) (char< . <) (char> . >) (char<= . <=) (char>= . >=))
+    (char= . =) (char< . <) (char> . >) (char<= . <=) (char>= . >=)
+    (char . aref) (schar . aref) (svref . aref)
+    (char-code . identity) (code-char . identity)
+    (case . cl-case) (typecase . cl-typecase) (ecase . cl-ecase)
+    (etypecase . cl-etypecase) (ccase . cl-ccase))
   "Common Lisp symbol -> Elisp/cl-lib symbol for function-position heads.")
 
 (defun ldb-cl--remap-head (sym)
@@ -127,6 +131,7 @@ Everything else (Lisp-2 symbols, keywords, t/nil, #') reads natively."
     read read-line read-char read-from-string
     with-open-file with-output-to-string open close
     tagbody go eval-when locally proclaim declaim
+    destructuring-bind with-slots with-accessors prog prog*
     delay force
     \` \, \,@ quasiquote unquote unquote-splicing)
   "CL forms rejected by the core translator (signal, never silent).")
@@ -206,7 +211,8 @@ Returns nil for a `declare' form (callers drop it from bodies)."
      ((memq head '(let let*)) (ldb-cl--let-to-ir form))
      ((eq head 'lambda) (ldb-cl--lambda-to-ir form))
      ((eq head 'defun) (ldb-cl--defun-to-ir form))
-     ((memq head '(defvar defparameter)) (ldb-cl--defvar-to-ir form))
+     ((memq head '(defvar defparameter defconstant)) (ldb-cl--defvar-to-ir form))
+     ((memq head '(case typecase ecase etypecase ccase)) (ldb-cl--case-to-ir form))
      ((memq head '(dolist dotimes)) (ldb-cl--bind-to-ir form))
      ((memq head '(labels flet)) (ldb-cl--locals-to-ir form))
      (t
@@ -284,6 +290,19 @@ Returns nil for a `declare' form (callers drop it from bodies)."
                              :result (when (nth 2 spec) (ldb-cl-form-to-ir (nth 2 spec)))
                              :body (ldb-cl--map-forms (cddr form)))
                  :origin 'cl)))
+
+(defun ldb-cl--case-to-ir (form)
+  "Translate a `case'/`typecase'/`ecase' FORM.
+Clause keys are DATA (kept verbatim); clause bodies are code."
+  (ldb-ir-make 'case
+               :form (list :head (ldb-cl--remap-head (car form))
+                           :key (ldb-cl-form-to-ir (nth 1 form))
+                           :clauses (mapcar
+                                     (lambda (clause)
+                                       (cons (car clause)
+                                             (ldb-cl--map-forms (cdr clause))))
+                                     (cddr form)))
+               :origin 'cl))
 
 (defun ldb-cl--locals-to-ir (form)
   "Translate a `labels'/`flet' FORM."

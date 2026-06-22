@@ -248,6 +248,13 @@ recipe — the user must add it after import.")
                                        (mapcar #'ldb-emit-elisp-node (nth 2 d))))
                              (plist-get f :defs)))
                (mapcar #'ldb-emit-elisp-node (plist-get f :body)))))
+    ('case
+     (let ((f (ldb-ir-form node)))
+       (append (list (plist-get f :head) (ldb-emit-elisp-node (plist-get f :key)))
+               (mapcar (lambda (clause)
+                         (cons (car clause)
+                               (mapcar #'ldb-emit-elisp-node (cdr clause))))
+                       (plist-get f :clauses)))))
     ('module
      (cons 'progn (mapcar #'ldb-emit-elisp-node
                           (plist-get (ldb-ir-form node) :items))))
