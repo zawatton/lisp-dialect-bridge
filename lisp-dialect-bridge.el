@@ -37,6 +37,7 @@
 (require 'ldb-scheme)
 (require 'ldb-emit-elisp)
 (require 'ldb-guix-importer)
+(require 'ldb-cl)
 
 (provide 'lisp-dialect-bridge)
 ;;; lisp-dialect-bridge.el ends here

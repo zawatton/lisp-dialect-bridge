@@ -169,5 +169,91 @@ recipe — the user must add it after import.")
          (mapped (cdr (assoc clean ldb--license-name-map))))
     (intern (or mapped clean))))
 
+;;;; --- general IR -> Elisp node emitter (Phase 4a: CL core) ----------------
+
+;; Dialect-neutral: consumes the general IR tags (01-overview L2 plus the
+;; defun/defvar/cond/bind/locals tags added in 02-cl-core).  All "head +
+;; expression args" forms (function calls AND elisp-identical special forms
+;; like when/and/setq/setf/block) share the `call' tag — emission is just
+;; `(head . emitted-args)', so they need no per-form code here.
+
+(defun ldb-emit-elisp--lambda-list (ll)
+  "Translate a (mostly CL) lambda list LL to an Elisp lambda list."
+  (mapcar (lambda (x) (if (eq x '&body) '&rest x)) ll))
+
+(defun ldb-emit-elisp-node (node)
+  "Emit Elisp source (as data) from a general IR NODE."
+  (pcase (ldb-ir-tag node)
+    ('literal (ldb-ir-literal-value node))
+    ('ref (plist-get (ldb-ir-form node) :name))
+    ('quote (list 'quote (plist-get (ldb-ir-form node) :datum)))
+    ('call
+     (cons (plist-get (ldb-ir-form node) :fn)
+           (mapcar #'ldb-emit-elisp-node (plist-get (ldb-ir-form node) :args))))
+    ('if
+     (let ((f (ldb-ir-form node)))
+       (append (list 'if
+                     (ldb-emit-elisp-node (plist-get f :cond))
+                     (ldb-emit-elisp-node (plist-get f :then)))
+               (when (plist-get f :else)
+                 (list (ldb-emit-elisp-node (plist-get f :else)))))))
+    ('cond
+     (cons 'cond
+           (mapcar (lambda (clause)
+                     (cons (ldb-emit-elisp-node (car clause))
+                           (mapcar #'ldb-emit-elisp-node (cadr clause))))
+                   (plist-get (ldb-ir-form node) :clauses))))
+    ('let
+     (let* ((f (ldb-ir-form node))
+            (kw (if (plist-get f :star) 'let* 'let)))
+       (append (list kw
+                     (mapcar (lambda (b)
+                               (if (cdr b)
+                                   (list (car b) (ldb-emit-elisp-node (cadr b)))
+                                 (list (car b))))
+                             (plist-get f :bindings)))
+               (mapcar #'ldb-emit-elisp-node (plist-get f :body)))))
+    ('lambda
+     (let* ((f (ldb-ir-form node))
+            (core (append (list 'lambda
+                                (ldb-emit-elisp--lambda-list (plist-get f :params)))
+                          (mapcar #'ldb-emit-elisp-node (plist-get f :body)))))
+       (if (plist-get f :cl) (list 'cl-function core) core)))
+    ('defun
+     (let* ((f (ldb-ir-form node))
+            (kw (if (plist-get f :cl) 'cl-defun 'defun)))
+       (append (list kw (plist-get f :name)
+                     (ldb-emit-elisp--lambda-list (plist-get f :params)))
+               (mapcar #'ldb-emit-elisp-node (plist-get f :body)))))
+    ('defvar
+     (let ((f (ldb-ir-form node)))
+       (append (list 'defvar (plist-get f :name))
+               (when (plist-get f :value)
+                 (list (ldb-emit-elisp-node (plist-get f :value)))))))
+    ('bind
+     (let* ((f (ldb-ir-form node))
+            (spec (append (list (plist-get f :var)
+                                (ldb-emit-elisp-node (plist-get f :iter)))
+                          (when (plist-get f :result)
+                            (list (ldb-emit-elisp-node (plist-get f :result)))))))
+       (append (list (plist-get f :head) spec)
+               (mapcar #'ldb-emit-elisp-node (plist-get f :body)))))
+    ('locals
+     (let* ((f (ldb-ir-form node))
+            (head (if (eq (plist-get f :head) 'labels) 'cl-labels 'cl-flet)))
+       (append (list head
+                     (mapcar (lambda (d)
+                               (append (list (nth 0 d)
+                                             (ldb-emit-elisp--lambda-list (nth 1 d)))
+                                       (mapcar #'ldb-emit-elisp-node (nth 2 d))))
+                             (plist-get f :defs)))
+               (mapcar #'ldb-emit-elisp-node (plist-get f :body)))))
+    ('module
+     (cons 'progn (mapcar #'ldb-emit-elisp-node
+                          (plist-get (ldb-ir-form node) :items))))
+    (_ (signal 'ldb-emit-error
+               (list (format "ldb-emit-elisp-node: unhandled IR tag %S"
+                             (ldb-ir-tag node)))))))
+
 (provide 'ldb-emit-elisp)
 ;;; ldb-emit-elisp.el ends here

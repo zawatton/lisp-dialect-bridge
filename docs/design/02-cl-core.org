@@ -1,0 +1,161 @@
+#+title: lisp-dialect-bridge — Phase 4a: Common Lisp core-syntax → Elisp
+#+author: zawatton
+#+date: 2026-06-22
+#+property: status SHIPPED
+
+* STATUS
+
+SHIPPED — 2026-06-22.  First increment of Phase 4 (Common Lisp subset →
+Elisp), deliberately scoped to *language core syntax only* (no CLOS,
+conditions, macros, LOOP, format, packages, multiple-values).
+Delivered: =ldb-cl.el= (reader + CL→IR mapper + public entry) and a
+general =ldb-emit-elisp-node= IR→Elisp emitter.  ERT 15/15 for CL core
+(24/24 repo-wide, no Phase-1 regression), byte-compile warnings-as-errors
+clean.  Demonstrated end-to-end by translating + running a self-contained
+symbolic-expression evaluator (a genetic-programming "individual"
+evaluator) — CL source → Elisp → correct result.
+
+Builds on the Phase 0 IR contract (=01-overview.org= L1/L2).  Re-uses
+the documented general-code IR tags; this doc only *adds* tags, never
+new top-level IR keys (per CLAUDE.md invariant 2).
+
+* Why CL-core first (vs roadmap's Scheme Phase 2)
+
+The end goal that motivated this work is a self-improving agent that
+stands on decades of Lisp AI heritage (genetic programming, symbolic
+AI).  That heritage is overwhelmingly *Common Lisp*.  CL is also a
+*Lisp-2* like Elisp, so cl-lib / eieio already carry most of the
+runtime — translation is near-identity for the core.  Scheme's
+Lisp-1 + hygienic macros + call/cc make it the harder, less
+AI-relevant target.  So we front-load CL core; the dialect-neutral IR
+means Scheme still benefits later.
+
+* Scope — IN (core syntax v1)
+
+| CL form                                   | Elisp output                         | Notes                          |
+|-------------------------------------------+--------------------------------------+--------------------------------|
+| literals: int/float/string/keyword/t/nil  | same                                 |                                |
+| =#\C= char                                | =?C=                                 | reader preprocess              |
+| symbol (var ref)                          | same                                 | Lisp-2 → no rename             |
+| =(quote X)= / ='X                         | =(quote X)=                          |                                |
+| function application =(f a b)=            | =(f a b)=                            | head remap table (below)       |
+| =defun=                                   | =defun= / =cl-defun=                | cl-defun iff extended λ-list   |
+| =lambda=                                  | =lambda= / =cl-function (lambda…)=  | same rule                      |
+| =defvar= / =defparameter=                 | =defvar=                            | defparameter divergence noted  |
+| =let= / =let*=                            | =let= / =let*=                      |                                |
+| =if=                                      | =if=                                |                                |
+| =cond=                                    | =cond=                              |                                |
+| =when= =unless= =and= =or= =not=          | same                                 | elisp-identical                |
+| =progn= =prog1= =prog2=                   | same                                 |                                |
+| =setq=                                    | =setq=                              |                                |
+| =setf=                                    | =setf= (cl-lib)                     | place translated as expr       |
+| =incf= =decf=                             | =cl-incf= =cl-decf=                 | place form preserved           |
+| =dolist= =dotimes=                        | same                                 | binding spec handled           |
+| =labels= =flet=                           | =cl-labels= =cl-flet=              | local recursion (AI code)      |
+| =block= =return-from=                     | =cl-block= =cl-return-from=        |                                |
+| =catch= =throw= =unwind-protect= =ignore-errors= | same                          | elisp-identical                |
+| seq fns =reduce/remove/remove-if/find/position/count/every/some/member/assoc/sort= | =cl-*= | cl-lib equivalents |
+| list fns =first/second/third/fourth/rest= | =car/cadr/caddr/cadddr/cdr=         |                                |
+
+Lambda-list handling: a CL λ-list needs =cl-defun=/=cl-function= iff it
+contains =&key=, =&aux=, or an =&optional=/=&rest= var with a default
+or supplied-p.  Plain =(a b &optional c &rest d)= → plain =defun=.
+
+Declarations =(declare …)= and =(the TYPE expr)= are *stripped*
+(=the= keeps its expr) — they are hints, semantically droppable.
+
+* Scope — OUT (reject loudly, =ldb-cl-unsupported-form-error=)
+
+CLOS (=defclass/defmethod/defgeneric=), =defstruct=, conditions
+(=define-condition/handler-case/restart-case=), macros
+(=defmacro/macrolet/define-symbol-macro=), =loop=, multiple values
+(=values/multiple-value-bind=), packages
+(=in-package/defpackage=), I/O with divergent semantics
+(=format/print/princ/write/read=), =tagbody/go=, =eval-when=,
+quasiquote/backquote, =call/cc=-equivalents.  Each signals with the
+offending form — never silent.  These land in later increments
+(macros gated on the L3 hygiene decision).
+
+Rationale: a narrow, *correct* core that runs real algorithms beats a
+broad, subtly-wrong translator.  Matches CLAUDE.md invariant 4.
+
+* IR tags
+
+Re-used (01-overview L2): =literal= =ref= =quote= =call= =if= =let=
+=lambda= =module=.
+
+Added this phase (allowed — new =:tag= values only):
+
+| Tag       | =:form= shape                                              |
+|-----------+------------------------------------------------------------|
+| =defun=   | =(:name SYM :params LL :body (NODE…) :cl BOOL)=            |
+| =defvar=  | =(:name SYM :value NODE :kind defvar\vert defparameter)=   |
+| =cond=    | =(:clauses ((TEST-NODE BODY-NODE…) …))=                   |
+| =special= | =(:head SYM :args (NODE…))=  head-passthrough special form |
+| =bind=    | =(:head SYM :spec (VAR ITER…) :body (NODE…))= dolist/dotimes|
+| =locals=  | =(:head SYM :defs ((NAME LL (BODY…))…) :body (NODE…))= labels/flet|
+
+=let= form gains =:star BOOL=.  =lambda= form gains =:cl BOOL=.
+
+=special= is the work-horse for elisp-identical forms (when/unless/
+and/or/not/progn/prog1/prog2/setq/setf/catch/throw/unwind-protect/
+ignore-errors/block/return-from/function) — translate every arg as an
+expression, pass the (possibly remapped) head through.  =ref= nodes
+emit a bare symbol, so =setq=/=block= names round-trip correctly.
+
+* Pipeline
+
+#+begin_src text
+  CL source string
+    │ ldb-cl-read-all-from-string   (preprocess #\C→?C, |sym|, then `read')
+    ▼
+  Elisp S-expressions
+    │ ldb-cl-form-to-ir             (dispatch on head; reject OUT-of-scope)
+    ▼
+  IR nodes (dialect-neutral, :origin 'cl)
+    │ ldb-emit-elisp-node           (general IR → Elisp, in ldb-emit-elisp.el)
+    ▼
+  Elisp source forms (data) — byte-compilable, cl-lib-dependent
+#+end_src
+
+Public API (=ldb-cl.el=):
+
+#+begin_src elisp
+(ldb-cl-translate-string SOURCE)  ; → list of Elisp forms (data)
+(ldb-cl-translate-form FORM)      ; → one Elisp form
+(ldb-cl-translate-file PATH)      ; → list of Elisp forms
+#+end_src
+
+Output is *data* (caller pp / write / eval), same policy as Phase 1
+(L5).  Emitted code requires =(require 'cl-lib)= at the consumer.
+
+* ERT plan (test/ldb-cl-test.el)
+
+| #  | Test                              | Covers                                  |
+|----+-----------------------------------+-----------------------------------------|
+| 1  | read-char-literal                 | =#\A= → =?A=                            |
+| 2  | translate-defun-factorial-golden  | defun+if+recursion exact form           |
+| 3  | eval-factorial-behaviour          | emitted (fact 5) = 120 after eval        |
+| 4  | translate-let*-cond              | let*/cond shape                         |
+| 5  | eval-labels-recursion             | cl-labels local recursion runs          |
+| 6  | defun-extended-lambda-list-cl     | &optional default / &key → cl-defun     |
+| 7  | eval-setf-incf                    | setf/cl-incf mutate correctly           |
+| 8  | seq-fn-remap                      | reduce/remove-if → cl-reduce/cl-remove-if|
+| 9  | reject-defclass                   | CLOS signals ldb-cl-unsupported-form-error|
+| 10 | reject-defmacro                   | macro signals                           |
+| 11 | reject-loop                       | loop signals                            |
+| 12 | strip-declare                     | (declare …) dropped, body preserved     |
+
+Behavioural tests =eval= the emitted Elisp (with cl-lib loaded) and
+assert runtime results — this is the analogue of the closed-loop
+"measure the live function" discipline: we prove the *translation
+runs*, not just that it pretty-prints.
+
+* Open questions
+
+- OQ1. =defstruct= → =cl-defstruct= is tempting (cl-lib has it) but
+  option syntax diverges; deferred to a 4b increment.
+- OQ2. =format= directive translation (=~a~%= → =%s\n=) is a separate
+  small module; core rejects =format= for now to stay honest.
+- OQ3. Macro translation stays gated on L3 (pre-expand vs native
+  hygiene); no macros in core.

@@ -1,6 +1,6 @@
 EMACS ?= emacs
-SRC = ldb-ir.el ldb-scheme.el ldb-emit-elisp.el ldb-guix-importer.el lisp-dialect-bridge.el
-TEST_SRC = test/ldb-guix-importer-test.el
+SRC = ldb-ir.el ldb-scheme.el ldb-emit-elisp.el ldb-guix-importer.el ldb-cl.el lisp-dialect-bridge.el
+TEST_SRC = test/ldb-guix-importer-test.el test/ldb-cl-test.el
 
 EMACS_BATCH = $(EMACS) -Q --batch -L . -L test
 

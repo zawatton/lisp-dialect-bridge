@@ -104,7 +104,8 @@ section "IR design".
 | 1     | Guix recipe importer (Scheme =package= form → =pkg-define=)       | *SHIPPED*     |
 | 2     | R7RS Scheme subset → Elisp (general translator)                     | next          |
 | 3     | Bidirectional Elisp ↔ Scheme                                        | planned       |
-| 4     | Common Lisp subset → Elisp                                          | research      |
+| 4a    | Common Lisp /core syntax/ → Elisp (defun/let/cond/labels/seq-fns)    | *SHIPPED*     |
+| 4b    | Common Lisp — defstruct / format / macros (gated on hygiene)         | research      |
 | 5     | Nix expression → Elisp IR (so anvil-pkg can ingest nixpkgs natively)| research      |
 | 6+    | Clojure subset (JVM-bound, very long term)                          | not promised  |
 
