@@ -165,6 +165,33 @@
   (should (= 3 (ldb-cl-test--eval
                 "(ldb-cl-test-pt-x (make-ldb-cl-test-pt :x 3 :y 4))"))))
 
+(ert-deftest ldb-cl-test-format-nil-golden ()
+  "format nil + ~a/~s/~% directives -> Elisp format control string."
+  (should (equal '(format "x=%s, y=%S\n" a b)
+                 (ldb-cl-translate-form
+                  (ldb-cl-read-from-string "(format nil \"x=~a, y=~s~%\" a b)")))))
+
+(ert-deftest ldb-cl-test-format-t-golden ()
+  "format t -> (princ (format ...))."
+  (should (equal '(princ (format "%s\n" x))
+                 (ldb-cl-translate-form
+                  (ldb-cl-read-from-string "(format t \"~a~%\" x)")))))
+
+(ert-deftest ldb-cl-test-eval-format ()
+  "Translated format nil runs and returns the right string."
+  (should (equal "1+2=3" (ldb-cl-test--eval "(format nil \"~a+~a=~a\" 1 2 3)")))
+  (should (equal "100%" (ldb-cl-test--eval "(format nil \"~a%\" 100)"))))
+
+(ert-deftest ldb-cl-test-reject-format-param ()
+  "Parameterized directive (~5d) is rejected loudly."
+  (should-error (ldb-cl-translate-string "(format nil \"~5d\" 3)")
+                :type 'ldb-cl-unsupported-form-error))
+
+(ert-deftest ldb-cl-test-reject-format-stream ()
+  "A stream destination (non nil/t) is rejected loudly."
+  (should-error (ldb-cl-translate-string "(format s \"~a\" x)")
+                :type 'ldb-cl-unsupported-form-error))
+
 (ert-deftest ldb-cl-test-reject-destructuring-bind ()
   "destructuring-bind (a binding form, not core) signals."
   (should-error (ldb-cl-translate-string "(destructuring-bind (a b) lst (+ a b))")

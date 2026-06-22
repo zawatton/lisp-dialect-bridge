@@ -29,7 +29,14 @@ translated) and sharp-quote function-designator remapping (so a
 sharp-quoted =oddp= becomes =cl-oddp=).  Validated on a =defstruct=
 binary-search-tree (insert/inorder via =setf= places + recursion) and a
 genetic-programming fitness selector (=cl-sort= =:key= sharp-quoted
-accessor) — all PASS.  ERT 29/29, byte-compile clean.
+accessor) — all PASS.
+
+A third 4b increment adds a =format= translator: control-string
+directives (=~a ~s ~d ~f ~x ~% ~~=, literal =%= → =%%=) with
+destinations =nil= (→ =format=) and =t= (→ =(princ (format ...))=);
+parameterized / iteration / conditional directives are rejected loudly.
+Validated on a GP individual report and a multi-line banner.  ERT 34/34,
+byte-compile warnings-as-errors clean.
 
 Builds on the Phase 0 IR contract (=01-overview.org= L1/L2).  Re-uses
 the documented general-code IR tags; this doc only *adds* tags, never
@@ -77,6 +84,7 @@ means Scheme still benefits later.
 | =defconstant=                             | =defvar=                            | (4b)                           |
 | =defstruct=                               | =cl-defstruct=                      | slot defaults translated (4b)  |
 | sharp-quote =#'fn=                         | =#'fn= (designator remapped)        | sharp-quoted oddp→cl-oddp (4b) |
+| =(format nil/t CTRL ...)=                  | =(format …)= / =(princ (format …))= | ~a~s~d~f~x~%~~ ; params rejected (4b)|
 
 Lambda-list handling: a CL λ-list needs =cl-defun=/=cl-function= iff it
 contains =&key=, =&aux=, or an =&optional=/=&rest= var with a default
@@ -92,7 +100,7 @@ CLOS (=defclass/defmethod/defgeneric=), conditions
 (=defmacro/macrolet/define-symbol-macro=), =loop=, multiple values
 (=values/multiple-value-bind=), packages
 (=in-package/defpackage=), I/O with divergent semantics
-(=format/print/princ/write/read=), =tagbody/go=, =eval-when=,
+(=print/princ/write/read=), =tagbody/go=, =eval-when=,
 quasiquote/backquote, =call/cc=-equivalents, binding/clause forms
 (=destructuring-bind/with-slots/with-accessors=).  Each signals with
 the offending form — never silent.  These land in later increments
@@ -178,7 +186,10 @@ runs*, not just that it pretty-prints.
 - OQ1. =defstruct= → =cl-defstruct= — DONE (4b).  Name/option spec is
   kept verbatim (cl-defstruct accepts the same =(:constructor ...)= etc.),
   slot defaults are translated.  Exotic =:type vector= layouts untested.
-- OQ2. =format= directive translation (=~a~%= → =%s\n=) is a separate
-  small module; core rejects =format= for now to stay honest.
+- OQ2. =format= directive translation — DONE (4b) for the basic subset
+  (=~a ~s ~d ~f ~e ~g ~x ~o ~c ~% ~& ~~=, destinations =nil= / =t=).
+  Parameterized (=~5d=, =~,2f=), iteration (=~{...~}=) and conditional
+  (=~[...~]=) directives are rejected loudly; a later increment can add
+  a real directive parser.
 - OQ3. Macro translation stays gated on L3 (pre-expand vs native
   hygiene); no macros in core.

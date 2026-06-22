@@ -127,7 +127,7 @@ Everything else (Lisp-2 symbols, keywords, t/nil, #') reads natively."
     loop do do* values multiple-value-bind multiple-value-call
     multiple-value-list multiple-value-setq nth-value
     in-package defpackage
-    format formatter print princ prin1 write write-line write-string write-char
+    formatter print princ prin1 write write-line write-string write-char
     read read-line read-char read-from-string
     with-open-file with-output-to-string open close
     tagbody go eval-when locally proclaim declaim
@@ -215,6 +215,7 @@ Returns nil for a `declare' form (callers drop it from bodies)."
      ((memq head '(defvar defparameter defconstant)) (ldb-cl--defvar-to-ir form))
      ((eq head 'defstruct) (ldb-cl--defstruct-to-ir form))
      ((memq head '(case typecase ecase etypecase ccase)) (ldb-cl--case-to-ir form))
+     ((eq head 'format) (ldb-cl--format-to-ir form))
      ((memq head '(dolist dotimes)) (ldb-cl--bind-to-ir form))
      ((memq head '(labels flet)) (ldb-cl--locals-to-ir form))
      (t
@@ -291,6 +292,47 @@ Returns nil for a `declare' form (callers drop it from bodies)."
                              :iter (ldb-cl-form-to-ir (nth 1 spec))
                              :result (when (nth 2 spec) (ldb-cl-form-to-ir (nth 2 spec)))
                              :body (ldb-cl--map-forms (cddr form)))
+                 :origin 'cl)))
+
+(defun ldb-cl--format-control (s)
+  "Convert a Common Lisp FORMAT control string S to an Elisp one.
+Signals on parameterized or unsupported directives (reject loudly)."
+  (let ((out '()) (i 0) (n (length s)))
+    (while (< i n)
+      (let ((c (aref s i)))
+        (cond
+         ((and (= c ?~) (< (1+ i) n))
+          (let ((d (downcase (aref s (1+ i)))))
+            (push (pcase d
+                    (?a "%s") (?s "%S") (?d "%d") (?f "%f") (?e "%e")
+                    (?g "%g") (?x "%x") (?o "%o") (?c "%c")
+                    ((or ?% ?&) "\n")
+                    (?~ "~")
+                    (_ (signal 'ldb-cl-unsupported-form-error
+                               (list (format "unsupported FORMAT directive ~%c (core v1)"
+                                             (aref s (1+ i)))))))
+                  out)
+            (setq i (+ i 2))))
+         ((= c ?~)
+          (signal 'ldb-cl-unsupported-form-error (list "dangling ~ in FORMAT control" s)))
+         ((= c ?%) (push "%%" out) (setq i (1+ i)))
+         (t (push (char-to-string c) out) (setq i (1+ i))))))
+    (apply #'concat (nreverse out))))
+
+(defun ldb-cl--format-to-ir (form)
+  "Translate a `format' FORM (destination nil or t; literal control string)."
+  (let ((dest (nth 1 form))
+        (ctrl (nth 2 form)))
+    (unless (memq dest '(nil t))
+      (signal 'ldb-cl-unsupported-form-error
+              (list "FORMAT destination must be nil or t in core v1" dest)))
+    (unless (stringp ctrl)
+      (signal 'ldb-cl-unsupported-form-error
+              (list "FORMAT control must be a literal string in core v1" ctrl)))
+    (ldb-ir-make 'format
+                 :form (list :dest dest
+                             :control (ldb-cl--format-control ctrl)
+                             :args (ldb-cl--map-forms (cdddr form)))
                  :origin 'cl)))
 
 (defun ldb-cl--function-to-ir (form)
