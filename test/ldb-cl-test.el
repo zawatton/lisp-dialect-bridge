@@ -144,6 +144,23 @@
   (should (= 5.0 (funcall 'ldb-cl-test-norm
                           (make-instance 'ldb-cl-test-pt :x 3 :y 4)))))
 
+(ert-deftest ldb-cl-test-handler-case-golden ()
+  "handler-case -> condition-case (single var, body translated)."
+  (should (equal '(condition-case e (signal-it) (error (list 'caught e)))
+                 (ldb-cl-translate-form
+                  (ldb-cl-read-from-string
+                   "(handler-case (signal-it) (error (e) (list 'caught e)))")))))
+
+(ert-deftest ldb-cl-test-eval-handler-case ()
+  "Translated handler-case catches an error / passes the value through,
+and per-clause vars collapse onto one condition-case var (let-rebind)."
+  (should (eq 'caught (ldb-cl-test--eval
+                       "(handler-case (error \"boom\") (error (e) 'caught))")))
+  (should (= 7 (ldb-cl-test--eval "(handler-case (+ 3 4) (error (e) 0))")))
+  (should (eq 'second
+             (ldb-cl-test--eval
+              "(handler-case (error \"e\") (arithmetic-error (a) 'first) (error (b) 'second))"))))
+
 (ert-deftest ldb-cl-test-reject-defmacro ()
   "defmacro signals (macros gated on hygiene decision)."
   (should-error (ldb-cl-translate-string "(defmacro m (x) `(+ ,x 1))")

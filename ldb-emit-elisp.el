@@ -193,6 +193,17 @@ recipe — the user must add it after import.")
           (ldb-emit-elisp--bq-template (cdr tmpl))))
    (t tmpl)))
 
+(defun ldb-emit-elisp--hc-clause (clause var)
+  "Emit a condition-case handler from CLAUSE (COND CVAR BODY-IR) using VAR.
+A per-clause var different from VAR is re-bound with `let'."
+  (let ((cond-name (nth 0 clause))
+        (cvar (nth 1 clause))
+        (body (mapcar #'ldb-emit-elisp-node (nth 2 clause))))
+    (cons cond-name
+          (if (and cvar (not (eq cvar var)))
+              (list (append (list 'let (list (list cvar var))) body))
+            body))))
+
 (defun ldb-emit-elisp--clos-slot (slot)
   "Rebuild a defclass SLOT, emitting Elisp for an IR-node :initform value."
   (if (symbolp slot) slot
@@ -272,6 +283,13 @@ recipe — the user must add it after import.")
     ('backquote
      (list ldb-ir-backquote-symbol
            (ldb-emit-elisp--bq-template (plist-get (ldb-ir-form node) :template))))
+    ('handler-case
+     (let* ((f (ldb-ir-form node))
+            (var (plist-get f :var)))
+       (append (list 'condition-case var
+                     (ldb-emit-elisp-node (plist-get f :protected)))
+               (mapcar (lambda (cl) (ldb-emit-elisp--hc-clause cl var))
+                       (plist-get f :clauses)))))
     ('defclass
      (let ((f (ldb-ir-form node)))
        (append (list 'defclass (plist-get f :name) (plist-get f :supers)

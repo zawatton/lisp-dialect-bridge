@@ -125,8 +125,22 @@ Everything else (Lisp-2 symbols, keywords, t/nil, #') reads natively."
   "Map a CL operator SYM to its Elisp/cl-lib equivalent (or itself)."
   (or (cdr (assq sym ldb-cl--remap)) sym))
 
+(defconst ldb-cl--condition-type-map
+  '((simple-error . error) (simple-condition . error) (warning . error)
+    (type-error . wrong-type-argument) (simple-type-error . wrong-type-argument)
+    (division-by-zero . arith-error) (arithmetic-error . arith-error)
+    (floating-point-overflow . arith-error) (floating-point-underflow . arith-error)
+    (unbound-variable . void-variable) (undefined-function . void-function)
+    (end-of-file . end-of-file) (file-error . file-error))
+  "Common Lisp condition type -> Elisp error symbol (best-effort; partial).
+Unmapped types pass through; CL-specific conditions may not be caught.")
+
+(defun ldb-cl--condition-type (sym)
+  "Map a CL condition type SYM to an Elisp error symbol (or itself)."
+  (or (cdr (assq sym ldb-cl--condition-type-map)) sym))
+
 (defconst ldb-cl--reject-heads
-  '(define-condition handler-case handler-bind restart-case restart-bind
+  '(define-condition handler-bind restart-case restart-bind
     defmacro macrolet symbol-macrolet define-symbol-macro define-compiler-macro
     do do* multiple-value-setq
     in-package defpackage
@@ -227,6 +241,7 @@ Returns nil for a `declare' form (callers drop it from bodies)."
      ((eq head 'defclass) (ldb-cl--defclass-to-ir form))
      ((eq head 'defmethod) (ldb-cl--defmethod-to-ir form))
      ((eq head 'defgeneric) (ldb-cl--defgeneric-to-ir form))
+     ((eq head 'handler-case) (ldb-cl--handler-case-to-ir form))
      ((memq head '(dolist dotimes)) (ldb-cl--bind-to-ir form))
      ((memq head '(labels flet)) (ldb-cl--locals-to-ir form))
      (t
@@ -367,6 +382,32 @@ Signals on parameterized or unsupported directives (reject loudly)."
                              :control (ldb-cl--format-control ctrl)
                              :args (ldb-cl--map-forms (cdddr form)))
                  :origin 'cl)))
+
+(defun ldb-cl--hc-var (clauses)
+  "Pick the single condition-case variable for handler-case CLAUSES."
+  (catch 'v
+    (dolist (c clauses '--ldb-cond)
+      (unless (eq (car c) :no-error)
+        (when (and (consp (cadr c)) (car (cadr c)))
+          (throw 'v (car (cadr c))))))))
+
+(defun ldb-cl--hc-clause-to-ir (clause)
+  "Translate a handler-case CLAUSE to (COND-NAME CLAUSE-VAR BODY-IR...)."
+  (list (if (eq (car clause) :no-error)
+            :success
+          (ldb-cl--condition-type (car clause)))
+        (and (consp (cadr clause)) (car (cadr clause)))
+        (ldb-cl--map-forms (cddr clause))))
+
+(defun ldb-cl--handler-case-to-ir (form)
+  "Translate (handler-case PROTECTED CLAUSES...) to condition-case (partial).
+CL conditions and Elisp errors differ: common types map, others pass
+through; per-clause vars collapse onto one condition-case var via let."
+  (ldb-ir-make 'handler-case
+               :form (list :var (ldb-cl--hc-var (nthcdr 2 form))
+                           :protected (ldb-cl-form-to-ir (nth 1 form))
+                           :clauses (mapcar #'ldb-cl--hc-clause-to-ir (nthcdr 2 form)))
+               :origin 'cl))
 
 (defun ldb-cl--clos-slot-to-ir (slot)
   "Translate a defclass SLOT.  Only the :initform value is code (-> IR);
